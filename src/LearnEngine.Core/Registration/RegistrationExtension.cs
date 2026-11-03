@@ -19,11 +19,17 @@ public static class RegistrationExtension
         /// Adds a signal the AI can report and registers the <see cref="SignalCatalog"/> built from every added signal.
         /// The catalog is built once, when it is first resolved, so signals added after the service provider is built are never seen.
         /// An empty id or description, or an id added twice, throws here so a wrong vocabulary stops the app at startup.
+        /// A signal added after AddLikelihoods throws too, because it would have no rates.
         /// </summary>
         public IServiceCollection AddSignal(string id, string description)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(id);
             ArgumentException.ThrowIfNullOrWhiteSpace(description);
+
+            var afterLikelihoods = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(LikelihoodTable) && !descriptor.IsKeyedService);
+            if (afterLikelihoods)
+                throw new InvalidOperationException($"The signal \"{id}\" is added after the likelihoods, so it has no rates. Add every signal before AddLikelihoods.");
 
             var taken = services.Any(descriptor =>
                 descriptor.ServiceType == typeof(SignalRegistration)

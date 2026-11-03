@@ -285,7 +285,9 @@ public static class RegistrationExtension
         /// Adds a signal that shows a picked move worked, such as "offers.own_answer", and registers the
         /// <see cref="OutcomeSignals"/> built from every success and failure signal.
         /// The outcome signals are built once, when first resolved, so signals added after the service provider is built are never seen.
-        /// The signal must be added with AddSignal before this call. An empty or unknown id, a signal added twice as a
+        /// It also registers the <see cref="MoveJudge"/> that judges a picked move by the learner turns after it.
+        /// The signal must be added with AddSignal, the history with AddHistory and at least one move with AddMoveFor
+        /// before this call. An empty or unknown id, a missing AddHistory or AddMoveFor, a signal added twice as a
         /// success signal, or a signal that is a failure signal too throws here so a wrong vocabulary stops the app at startup.
         /// </summary>
         public IServiceCollection AddSuccessSignal(string signalId)
@@ -299,6 +301,16 @@ public static class RegistrationExtension
                 && registration.Signal.Id == signalId);
             if (!knownSignal)
                 throw new InvalidOperationException($"The signal \"{signalId}\" is not added. Add it with AddSignal before AddSuccessSignal.");
+
+            var historyAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(HistoryReplayer) && !descriptor.IsKeyedService);
+            if (!historyAdded)
+                throw new InvalidOperationException($"The history is not added, so the signal \"{signalId}\" cannot judge a move. Add it with AddHistory before AddSuccessSignal.");
+
+            var movesAllowed = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(AllowedMoveRegistration) && !descriptor.IsKeyedService);
+            if (!movesAllowed)
+                throw new InvalidOperationException($"No moves are allowed, so the signal \"{signalId}\" has no move to judge. Allow them with AddMoveFor before AddSuccessSignal.");
 
             var taken = services.Any(descriptor =>
                 descriptor.ServiceType == typeof(SuccessSignalRegistration)
@@ -320,6 +332,13 @@ public static class RegistrationExtension
             services.TryAddSingleton(provider => OutcomeSignals.Create(
                 [.. provider.GetServices<SuccessSignalRegistration>().Select(registration => registration.SignalId)],
                 [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
+            services.TryAddSingleton(provider => MoveJudge.Create(
+                provider.GetRequiredService<HistoryReplayer>(),
+                provider.GetRequiredService<OddsEngine>(),
+                provider.GetRequiredService<OutcomeSignals>(),
+                provider.GetRequiredService<AllowedMoveCatalog>(),
+                provider.GetRequiredService<IHistoryStore>(),
+                provider.GetRequiredService<IScoreStore>()));
             return services;
         }
 
@@ -327,7 +346,9 @@ public static class RegistrationExtension
         /// Adds a signal that shows a picked move failed, such as "says.overwhelmed", and registers the
         /// <see cref="OutcomeSignals"/> built from every success and failure signal.
         /// The outcome signals are built once, when first resolved, so signals added after the service provider is built are never seen.
-        /// The signal must be added with AddSignal before this call. An empty or unknown id, a signal added twice as a
+        /// It also registers the <see cref="MoveJudge"/> that judges a picked move by the learner turns after it.
+        /// The signal must be added with AddSignal, the history with AddHistory and at least one move with AddMoveFor
+        /// before this call. An empty or unknown id, a missing AddHistory or AddMoveFor, a signal added twice as a
         /// failure signal, or a signal that is a success signal too throws here so a wrong vocabulary stops the app at startup.
         /// </summary>
         public IServiceCollection AddFailureSignal(string signalId)
@@ -341,6 +362,16 @@ public static class RegistrationExtension
                 && registration.Signal.Id == signalId);
             if (!knownSignal)
                 throw new InvalidOperationException($"The signal \"{signalId}\" is not added. Add it with AddSignal before AddFailureSignal.");
+
+            var historyAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(HistoryReplayer) && !descriptor.IsKeyedService);
+            if (!historyAdded)
+                throw new InvalidOperationException($"The history is not added, so the signal \"{signalId}\" cannot judge a move. Add it with AddHistory before AddFailureSignal.");
+
+            var movesAllowed = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(AllowedMoveRegistration) && !descriptor.IsKeyedService);
+            if (!movesAllowed)
+                throw new InvalidOperationException($"No moves are allowed, so the signal \"{signalId}\" has no move to judge. Allow them with AddMoveFor before AddFailureSignal.");
 
             var taken = services.Any(descriptor =>
                 descriptor.ServiceType == typeof(FailureSignalRegistration)
@@ -362,6 +393,13 @@ public static class RegistrationExtension
             services.TryAddSingleton(provider => OutcomeSignals.Create(
                 [.. provider.GetServices<SuccessSignalRegistration>().Select(registration => registration.SignalId)],
                 [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
+            services.TryAddSingleton(provider => MoveJudge.Create(
+                provider.GetRequiredService<HistoryReplayer>(),
+                provider.GetRequiredService<OddsEngine>(),
+                provider.GetRequiredService<OutcomeSignals>(),
+                provider.GetRequiredService<AllowedMoveCatalog>(),
+                provider.GetRequiredService<IHistoryStore>(),
+                provider.GetRequiredService<IScoreStore>()));
             return services;
         }
     }

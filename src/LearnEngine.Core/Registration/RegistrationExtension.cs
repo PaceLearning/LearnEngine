@@ -220,6 +220,8 @@ public static class RegistrationExtension
         /// Allows a move in a state, with how many times it worked and was tried there across all learners, and registers
         /// the <see cref="AllowedMoveCatalog"/> built from every allowed move. A learner with no score of their own starts from these counts.
         /// The catalog is built once, when it is first resolved, so moves allowed after the service provider is built are never seen.
+        /// An <see cref="InMemoryScoreStore"/> is registered as the <see cref="IScoreStore"/> that keeps each learner's own scores.
+        /// To keep scores somewhere else, register your own <see cref="IScoreStore"/> before the first AddMoveFor and it is kept.
         /// The state must be added with AddStates and the move with AddMove before this call. An empty or unknown id,
         /// a move allowed twice in the same state, or counts below 0 or with more worked than tried throw here so a wrong
         /// vocabulary stops the app at startup.
@@ -268,6 +270,7 @@ public static class RegistrationExtension
             services.TryAddSingleton(provider => AllowedMoveCatalog.Create(
                 provider.GetRequiredService<StateCatalog>(),
                 [.. provider.GetServices<AllowedMoveRegistration>().Select(registration => registration.StartingScore)]));
+            services.TryAddSingleton<IScoreStore>(_ => InMemoryScoreStore.Create());
             return services;
         }
     }

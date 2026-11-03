@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using LearnEngine.Core.Bandit;
 using LearnEngine.Core.History;
+using LearnEngine.Core.Judging;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
@@ -276,6 +277,90 @@ public static class RegistrationExtension
                 provider.GetRequiredService<AllowedMoveCatalog>(),
                 provider.GetRequiredService<MoveCatalog>(),
                 provider.GetRequiredService<IScoreStore>()));
+            return services;
+        }
+
+        /// <summary>
+        /// Adds a signal that shows a picked move worked, such as "offers.own_answer", and registers the
+        /// <see cref="OutcomeSignals"/> built from every success and failure signal.
+        /// The outcome signals are built once, when first resolved, so signals added after the service provider is built are never seen.
+        /// The signal must be added with AddSignal before this call. An empty or unknown id, a signal added twice as a
+        /// success signal, or a signal that is a failure signal too throws here so a wrong vocabulary stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddSuccessSignal(string signalId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(signalId);
+
+            var knownSignal = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(SignalRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is SignalRegistration registration
+                && registration.Signal.Id == signalId);
+            if (!knownSignal)
+                throw new InvalidOperationException($"The signal \"{signalId}\" is not added. Add it with AddSignal before AddSuccessSignal.");
+
+            var taken = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(SuccessSignalRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is SuccessSignalRegistration registration
+                && registration.SignalId == signalId);
+            if (taken)
+                throw new InvalidOperationException($"The signal \"{signalId}\" is added twice as a success signal.");
+
+            var failure = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(FailureSignalRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is FailureSignalRegistration registration
+                && registration.SignalId == signalId);
+            if (failure)
+                throw new InvalidOperationException($"The signal \"{signalId}\" is added as a failure signal too. A signal can show a move worked or failed, not both.");
+
+            services.AddSingleton(SuccessSignalRegistration.Create(signalId));
+            services.TryAddSingleton(provider => OutcomeSignals.Create(
+                [.. provider.GetServices<SuccessSignalRegistration>().Select(registration => registration.SignalId)],
+                [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
+            return services;
+        }
+
+        /// <summary>
+        /// Adds a signal that shows a picked move failed, such as "says.overwhelmed", and registers the
+        /// <see cref="OutcomeSignals"/> built from every success and failure signal.
+        /// The outcome signals are built once, when first resolved, so signals added after the service provider is built are never seen.
+        /// The signal must be added with AddSignal before this call. An empty or unknown id, a signal added twice as a
+        /// failure signal, or a signal that is a success signal too throws here so a wrong vocabulary stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddFailureSignal(string signalId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(signalId);
+
+            var knownSignal = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(SignalRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is SignalRegistration registration
+                && registration.Signal.Id == signalId);
+            if (!knownSignal)
+                throw new InvalidOperationException($"The signal \"{signalId}\" is not added. Add it with AddSignal before AddFailureSignal.");
+
+            var taken = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(FailureSignalRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is FailureSignalRegistration registration
+                && registration.SignalId == signalId);
+            if (taken)
+                throw new InvalidOperationException($"The signal \"{signalId}\" is added twice as a failure signal.");
+
+            var success = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(SuccessSignalRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is SuccessSignalRegistration registration
+                && registration.SignalId == signalId);
+            if (success)
+                throw new InvalidOperationException($"The signal \"{signalId}\" is added as a success signal too. A signal can show a move worked or failed, not both.");
+
+            services.AddSingleton(FailureSignalRegistration.Create(signalId));
+            services.TryAddSingleton(provider => OutcomeSignals.Create(
+                [.. provider.GetServices<SuccessSignalRegistration>().Select(registration => registration.SignalId)],
+                [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
             return services;
         }
     }

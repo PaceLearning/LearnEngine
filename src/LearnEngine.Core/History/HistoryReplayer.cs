@@ -26,7 +26,7 @@ public sealed class HistoryReplayer
     /// started with, then the turn's signals are applied. Events that are not learner turns leave the belief as it is.
     /// The same history always gives the same belief.
     /// A history stamped with another vocabulary gives <see cref="OtherVocabulary"/>. A history that does not begin with
-    /// a session start, has a second one, has a fade outside 0 to 1, or has a turn with a signal that is not registered
+    /// a session start, has a second one, has a fade or clear margin outside 0 to 1, or has a turn with a signal that is not registered
     /// gives <see cref="BrokenHistory"/>.
     /// </summary>
     public OneOf<Belief, OtherVocabulary, BrokenHistory> Replay(ImmutableArray<HistoryEvent> history)
@@ -45,6 +45,10 @@ public sealed class HistoryReplayer
         var fadeInRange = start.Fade >= 0 && start.Fade <= 1;
         if (!fadeInRange)
             return BrokenHistory.Create(0, $"The session start has a fade of {start.Fade}, which is not from 0 to 1.");
+
+        var clearMarginInRange = start.ClearMargin >= 0 && start.ClearMargin <= 1;
+        if (!clearMarginInRange)
+            return BrokenHistory.Create(0, $"The session start has a clear margin of {start.ClearMargin}, which is not from 0 to 1.");
 
         var belief = engine.Start();
         for (var index = 1; index < history.Length; index++)

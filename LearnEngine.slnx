@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/LearnEngine.Core/LearnEngine.Core.csproj" />
+    <Project Path="src/LearnEngine.Mcp/LearnEngine.Mcp.csproj" />
   </Folder>
 </Solution>

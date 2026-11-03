@@ -5,6 +5,7 @@ using LearnEngine.Core.Judging;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
+using LearnEngine.Core.Sessions;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
 using Microsoft.Extensions.DependencyInjection;
@@ -400,6 +401,40 @@ public static class RegistrationExtension
                 provider.GetRequiredService<AllowedMoveCatalog>(),
                 provider.GetRequiredService<IHistoryStore>(),
                 provider.GetRequiredService<IScoreStore>()));
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the <see cref="SessionEngine"/>, the one service the app or an MCP host calls to start a session,
+        /// report each learner turn and read the belief. Call it last, after the vocabulary: the signals, states,
+        /// likelihoods, odds, history, moves allowed in each state and the success and failure signals.
+        /// It takes no options of its own, because the fade and clear margin are given to AddOdds and the stores are
+        /// the ones registered by AddHistory and AddMoveFor.
+        /// No success or failure signal before this call, or a second call, throws here so a wrong setup stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddLearnEngine()
+        {
+            var added = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(SessionEngine) && !descriptor.IsKeyedService);
+            if (added)
+                throw new InvalidOperationException("The engine is added twice. Call AddLearnEngine once.");
+
+            // The judge is only registered once the history, an allowed move and an outcome signal are added, so its
+            // presence means the whole vocabulary came first.
+            var judgeAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(MoveJudge) && !descriptor.IsKeyedService);
+            if (!judgeAdded)
+                throw new InvalidOperationException("No success or failure signal is added, so no picked move can be judged. Add them with AddSuccessSignal or AddFailureSignal before AddLearnEngine.");
+
+            services.AddSingleton(provider => SessionEngine.Create(
+                provider.GetRequiredService<OddsEngine>(),
+                provider.GetRequiredService<OddsOptions>(),
+                provider.GetRequiredService<VocabularyFingerprint>(),
+                provider.GetRequiredService<IHistoryStore>(),
+                provider.GetRequiredService<HistoryReplayer>(),
+                provider.GetRequiredService<SignalCatalog>(),
+                provider.GetRequiredService<MoveJudge>(),
+                provider.GetRequiredService<MovePicker>()));
             return services;
         }
     }

@@ -1,4 +1,8 @@
+using System.Collections.Immutable;
+using LearnEngine.Core.Likelihoods;
+using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
+using OneOf;
 
 namespace LearnEngine.Core.Odds;
 
@@ -8,11 +12,19 @@ namespace LearnEngine.Core.Odds;
 public sealed class OddsEngine
 {
     private readonly StateCatalog states;
+    private readonly SignalCatalog signals;
+    private readonly LikelihoodTable likelihoods;
 
-    private OddsEngine(StateCatalog states) => this.states = states;
+    private OddsEngine(StateCatalog states, SignalCatalog signals, LikelihoodTable likelihoods)
+    {
+        this.states = states;
+        this.signals = signals;
+        this.likelihoods = likelihoods;
+    }
 
-    // Internal so an engine only comes from registration, which has already checked the states.
-    internal static OddsEngine Create(StateCatalog states) => new(states);
+    // Internal so an engine only comes from registration, which has already checked the states, the signals and the rates.
+    internal static OddsEngine Create(StateCatalog states, SignalCatalog signals, LikelihoodTable likelihoods) =>
+        new(states, signals, likelihoods);
 
     /// <summary>
     /// Gives the belief before anything is known about the learner: the prior of every state.
@@ -38,5 +50,45 @@ public sealed class OddsEngine
         return Belief.Create([.. belief.All.Select(stateOdds => StateOdds.Create(
             stateOdds.StateId,
             (1 - fade) * stateOdds.Odds + fade * states.Find(stateOdds.StateId).AsT0.Prior))]);
+    }
+
+    /// <summary>
+    /// Applies the signals of one learner turn to the belief. Fade the belief first, since this does not.
+    /// Every registered signal counts: a signal that showed up multiplies the odds of each state by its rate in that state,
+    /// and a signal that did not show up multiplies them by 1 minus its rate. The odds are then rescaled to add up to 1.
+    /// A turn with no signals still moves the belief, because every signal not showing up says something too.
+    /// A signal reported twice counts once. Ids that are not registered give the unknown signals, in the order reported,
+    /// and leave the belief as it was.
+    /// </summary>
+    public OneOf<Belief, ImmutableArray<UnknownSignal>> Apply(Belief belief, IEnumerable<string> signalIds)
+    {
+        ArgumentNullException.ThrowIfNull(belief);
+        ArgumentNullException.ThrowIfNull(signalIds);
+
+        var reported = signalIds.Distinct(StringComparer.Ordinal).ToList();
+
+        ImmutableArray<UnknownSignal> unknown = [.. reported
+            .Where(signalId => signals.Find(signalId).IsT1)
+            .Select(UnknownSignal.Create)];
+        if (unknown.Length > 0)
+            return unknown;
+
+        var multiplied = new List<StateOdds>();
+        foreach (var stateOdds in belief.All)
+        {
+            var odds = stateOdds.Odds;
+            foreach (var signal in signals.All)
+            {
+                // Every signal has a rate in every state, because registration checked the table is whole.
+                var rate = likelihoods.Find(signal.Id, stateOdds.StateId).AsT0.Rate;
+                var showedUp = reported.Contains(signal.Id);
+                odds *= showedUp ? rate : 1 - rate;
+            }
+
+            multiplied.Add(StateOdds.Create(stateOdds.StateId, odds));
+        }
+
+        var total = multiplied.Sum(stateOdds => stateOdds.Odds);
+        return Belief.Create([.. multiplied.Select(stateOdds => StateOdds.Create(stateOdds.StateId, stateOdds.Odds / total))]);
     }
 }

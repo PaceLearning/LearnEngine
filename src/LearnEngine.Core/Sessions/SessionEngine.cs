@@ -14,18 +14,30 @@ public sealed class SessionEngine
     private readonly OddsOptions options;
     private readonly VocabularyFingerprint fingerprint;
     private readonly IHistoryStore histories;
+    private readonly HistoryReplayer replayer;
 
-    private SessionEngine(OddsEngine engine, OddsOptions options, VocabularyFingerprint fingerprint, IHistoryStore histories)
+    private SessionEngine(
+        OddsEngine engine,
+        OddsOptions options,
+        VocabularyFingerprint fingerprint,
+        IHistoryStore histories,
+        HistoryReplayer replayer)
     {
         this.engine = engine;
         this.options = options;
         this.fingerprint = fingerprint;
         this.histories = histories;
+        this.replayer = replayer;
     }
 
     // Internal so an engine only comes from registration, with the registered vocabulary, options and stores.
-    internal static SessionEngine Create(OddsEngine engine, OddsOptions options, VocabularyFingerprint fingerprint, IHistoryStore histories) =>
-        new(engine, options, fingerprint, histories);
+    internal static SessionEngine Create(
+        OddsEngine engine,
+        OddsOptions options,
+        VocabularyFingerprint fingerprint,
+        IHistoryStore histories,
+        HistoryReplayer replayer) =>
+        new(engine, options, fingerprint, histories, replayer);
 
     /// <summary>
     /// Starts the given learner's session: its history begins with a session start stamped with the registered
@@ -44,5 +56,31 @@ public sealed class SessionEngine
         var start = SessionStarted.Create(fingerprint.Value, options.Fade, options.ClearMargin);
         await histories.Append(learnerId, sessionId, start, cancellationToken);
         return SessionBelief.Create(engine.Start(), start.ClearMargin);
+    }
+
+    /// <summary>
+    /// Gives what the engine believes about the learner now, rebuilt from the session's history, without reporting a turn.
+    /// A session with no history gives <see cref="SessionNotStarted"/>. A history stamped with another vocabulary gives
+    /// <see cref="OtherVocabulary"/>, and a history that cannot be replayed gives <see cref="BrokenHistory"/>.
+    /// </summary>
+    public async Task<OneOf<SessionBelief, SessionNotStarted, OtherVocabulary, BrokenHistory>> GetBelief(string learnerId, string sessionId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var history = await histories.Load(learnerId, sessionId, cancellationToken);
+        if (history.IsDefaultOrEmpty)
+            return SessionNotStarted.Create(learnerId, sessionId);
+
+        var replayed = replayer.Replay(history);
+        if (replayed.IsT1)
+            return replayed.AsT1;
+
+        if (replayed.IsT2)
+            return replayed.AsT2;
+
+        // The replay checked the history begins with a session start.
+        var start = (SessionStarted)history[0];
+        return SessionBelief.Create(replayed.AsT0, start.ClearMargin);
     }
 }

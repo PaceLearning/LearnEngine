@@ -5,25 +5,32 @@ LearnEngine makes Claude a tutor that notices how you learn and changes how it t
 ## Set it up
 
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it. Keep it running whenever you learn.
-2. Open Claude Desktop. Go to Settings, then Developer, then Edit Config. This opens the file `claude_desktop_config.json`:
+2. Open a terminal (PowerShell on Windows, Terminal on macOS) and build LearnEngine. This takes a few minutes the first time:
+
+   ```
+   docker build -t learnengine-mcp https://github.com/PaceLearning/LearnEngine.git#main
+   ```
+
+   Run the same command again later to update it.
+3. Open Claude Desktop. Go to Settings, then Developer, then Edit Config. This opens the file `claude_desktop_config.json`:
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-3. If the file is empty or holds only `{}`, replace it with this. You can also copy it from [claude_desktop_config.json](claude_desktop_config.json).
+4. If the file is empty or holds only `{}`, replace it with this. You can also copy it from [claude_desktop_config.json](claude_desktop_config.json).
 
    ```json
    {
      "mcpServers": {
        "learnengine": {
          "command": "docker",
-         "args": ["run", "-i", "--rm", "-v", "learnengine:/data", "ghcr.io/pacelearning/learnengine-mcp:latest"]
+         "args": ["run", "-i", "--rm", "-v", "learnengine:/data", "learnengine-mcp"]
        }
      }
    }
    ```
 
    If it already has `mcpServers`, add only the `"learnengine": { ... }` entry inside it, with a comma after the entry before it.
-4. Save the file. Quit Claude Desktop fully and open it again.
-5. The first time Claude calls `report_turn`, it asks for permission. Choose **Always allow**. Otherwise Claude asks you again on every message.
+5. Save the file. Quit Claude Desktop fully and open it again.
+6. The first time Claude calls `report_turn`, it asks for permission. Choose **Always allow**. Otherwise Claude asks you again on every message.
 
 ## Start learning
 

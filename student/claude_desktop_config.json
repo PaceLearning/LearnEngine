@@ -2,7 +2,7 @@
   "mcpServers": {
     "learnengine": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", "learnengine:/data", "ghcr.io/pacelearning/learnengine-mcp:latest"]
+      "args": ["run", "-i", "--rm", "-v", "learnengine:/data", "learnengine-mcp"]
     }
   }
 }

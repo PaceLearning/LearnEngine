@@ -1,6 +1,6 @@
 # Builds the LearnEngine MCP server as a Native AOT binary and runs it on a small image with no SDK and no shell.
 # Run it with a volume for /data, where the histories, scores and compliance logs are kept between runs:
-#   docker run -i --rm -v learnengine:/data learnengine-mcp:dev
+#   docker run -i --rm -v learnengine:/data learnengine-mcp
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble-aot AS build
 ARG TARGETARCH

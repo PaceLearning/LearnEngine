@@ -20,18 +20,34 @@ public sealed class MoveJudge
     private readonly OddsEngine engine;
     private readonly OutcomeSignals outcomes;
     private readonly AllowedMoveCatalog allowedMoves;
+    private readonly IHistoryStore histories;
+    private readonly IScoreStore scores;
 
-    private MoveJudge(HistoryReplayer replayer, OddsEngine engine, OutcomeSignals outcomes, AllowedMoveCatalog allowedMoves)
+    private MoveJudge(
+        HistoryReplayer replayer,
+        OddsEngine engine,
+        OutcomeSignals outcomes,
+        AllowedMoveCatalog allowedMoves,
+        IHistoryStore histories,
+        IScoreStore scores)
     {
         this.replayer = replayer;
         this.engine = engine;
         this.outcomes = outcomes;
         this.allowedMoves = allowedMoves;
+        this.histories = histories;
+        this.scores = scores;
     }
 
     // Internal so a judge only comes from registration, with the registered vocabulary, outcome signals and allowed moves.
-    internal static MoveJudge Create(HistoryReplayer replayer, OddsEngine engine, OutcomeSignals outcomes, AllowedMoveCatalog allowedMoves) =>
-        new(replayer, engine, outcomes, allowedMoves);
+    internal static MoveJudge Create(
+        HistoryReplayer replayer,
+        OddsEngine engine,
+        OutcomeSignals outcomes,
+        AllowedMoveCatalog allowedMoves,
+        IHistoryStore histories,
+        IScoreStore scores) =>
+        new(replayer, engine, outcomes, allowedMoves, histories, scores);
 
     /// <summary>
     /// Replays the history and says what is due for the last picked move. It reads nothing but the history and the
@@ -40,7 +56,7 @@ public sealed class MoveJudge
     /// for is still the clear state after the turn. On such a turn it failed when a failure signal shows up, and it worked
     /// when a success signal shows up and no failure signal does. When the state changes before a result, or the turns give
     /// no result, the move is not judged at all.
-    /// A judgment that is due and not yet in the history gives the <see cref="MoveJudged"/> to record.
+    /// A judgment that is due and not yet in the history gives the <see cref="MoveJudged"/> to pass to <see cref="Record"/>.
     /// A move still waiting for a result gives <see cref="MoveBeingJudged"/>, and anything else gives <see cref="NothingToJudge"/>.
     /// A history stamped with another vocabulary gives <see cref="OtherVocabulary"/>. A history the replayer cannot replay,
     /// or with a move picked in a state that is not clear, a move not allowed in its state, a move picked while another
@@ -136,5 +152,34 @@ public sealed class MoveJudge
             return MoveBeingJudged.Create(open.StateId, open.MoveId, JudgingTurns - turnsSeen);
 
         return NothingToJudge.Create();
+    }
+
+    /// <summary>
+    /// Records a judgment given by <see cref="Judge"/>: appends it to the history of the learner's session and adds it to
+    /// the learner's score of the move in its state, one more try and one more worked when it worked. A learner with no
+    /// score of their own starts from the starting score the app allowed the move with. Gives the learner's new score.
+    /// A judgment of a move that is not allowed in its state throws, because Judge never gives one.
+    /// </summary>
+    public async Task<MoveScore> Record(string learnerId, string sessionId, MoveJudged judged, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentNullException.ThrowIfNull(judged);
+
+        var allowed = allowedMoves.Find(judged.StateId);
+        var starting = allowed.IsT0 ? allowed.AsT0.FirstOrDefault(score => score.MoveId == judged.MoveId) : null;
+        if (starting is null)
+            throw new ArgumentException($"The move \"{judged.MoveId}\" is not allowed in \"{judged.StateId}\", so it cannot be judged there. Record only a judgment given by Judge.", nameof(judged));
+
+        // The judgment goes in the history first, so a failure before the score is saved loses one count
+        // instead of counting it twice when the history is judged again.
+        await histories.Append(learnerId, sessionId, judged, cancellationToken);
+
+        var saved = await scores.Load(learnerId, judged.StateId, cancellationToken);
+        var current = saved.FirstOrDefault(score => score.MoveId == judged.MoveId) ?? starting;
+        var worked = judged.Worked ? 1 : 0;
+        var updated = MoveScore.Create(judged.StateId, judged.MoveId, current.Worked + worked, current.Tried + 1);
+        await scores.Save(learnerId, updated, cancellationToken);
+        return updated;
     }
 }

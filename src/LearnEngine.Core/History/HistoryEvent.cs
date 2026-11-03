@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LearnEngine.Core.History;
 
 /// <summary>
@@ -5,6 +7,10 @@ namespace LearnEngine.Core.History;
 /// A session's history only ever grows, and the belief about the learner is rebuilt by replaying it from the priors.
 /// No event ever holds the learner's words.
 /// </summary>
+// The discriminators are written in every stored line, so they never change when a class is renamed.
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "event")]
+[JsonDerivedType(typeof(SessionStarted), "session_started")]
+[JsonDerivedType(typeof(LearnerTurn), "learner_turn")]
 public abstract class HistoryEvent
 {
     // Private protected so every kind of event is one the engine knows how to replay and write.

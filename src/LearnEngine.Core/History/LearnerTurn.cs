@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace LearnEngine.Core.History;
 
@@ -13,7 +14,9 @@ public sealed class LearnerTurn : HistoryEvent
     /// </summary>
     public ImmutableArray<string> SignalIds { get; }
 
-    private LearnerTurn(ImmutableArray<string> signalIds) => SignalIds = signalIds;
+    // Internal, not private, so the source generated JSON reader can call it.
+    [JsonConstructor]
+    internal LearnerTurn(ImmutableArray<string> signalIds) => SignalIds = signalIds;
 
     /// <summary>
     /// Creates a learner turn with the ids of the signals the AI reported for it.

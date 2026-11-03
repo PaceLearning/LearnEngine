@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LearnEngine.Core.History;
 
 /// <summary>
@@ -16,7 +18,9 @@ public sealed class SessionStarted : HistoryEvent
     /// </summary>
     public double Fade { get; }
 
-    private SessionStarted(string fingerprint, double fade)
+    // Internal, not private, so the source generated JSON reader can call it.
+    [JsonConstructor]
+    internal SessionStarted(string fingerprint, double fade)
     {
         Fingerprint = fingerprint;
         Fade = fade;

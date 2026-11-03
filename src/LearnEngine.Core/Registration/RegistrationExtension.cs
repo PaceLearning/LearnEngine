@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using LearnEngine.Core.Bandit;
+using LearnEngine.Core.Guide;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Judging;
 using LearnEngine.Core.Likelihoods;
@@ -408,6 +409,7 @@ public static class RegistrationExtension
         /// Registers the <see cref="SessionEngine"/>, the one service the app or an MCP host calls to start a session,
         /// report each learner turn and read the belief. Call it last, after the vocabulary: the signals, states,
         /// likelihoods, odds, history, moves allowed in each state and the success and failure signals.
+        /// It also registers the <see cref="VocabularyGuide"/> the AI reads, written once from the vocabulary when first resolved.
         /// It takes no options of its own, because the fade and clear margin are given to AddOdds and the stores are
         /// the ones registered by AddHistory and AddMoveFor.
         /// No success or failure signal before this call, or a second call, throws here so a wrong setup stops the app at startup.
@@ -435,6 +437,10 @@ public static class RegistrationExtension
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<MoveJudge>(),
                 provider.GetRequiredService<MovePicker>()));
+            services.AddSingleton(provider => VocabularyGuide.Create(
+                provider.GetRequiredService<SignalCatalog>(),
+                provider.GetRequiredService<StateCatalog>(),
+                provider.GetRequiredService<MoveCatalog>()));
             return services;
         }
     }

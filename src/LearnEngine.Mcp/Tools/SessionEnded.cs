@@ -21,7 +21,7 @@ public sealed class SessionEnded
     public int LastTurn { get; }
 
     /// <summary>
-    /// The sentence to pass on to the student, such as "PACE recorded 7 of your 9 messages in this session.".
+    /// The sentence to pass on to the student, such as "LearnEngine recorded 7 of your 9 messages in this session.".
     /// </summary>
     public string Message { get; }
 

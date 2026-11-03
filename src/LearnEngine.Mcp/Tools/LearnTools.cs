@@ -234,12 +234,12 @@ public sealed class LearnTools(
             var last = await compliance.Last(settings.LearnerId, sessionId, cancellationToken);
             var sent = Math.Max(last?.HighestTurn ?? 0, recorded);
 
-            var message = $"PACE recorded {recorded} of your {sent} messages in this session.";
+            var message = $"LearnEngine recorded {recorded} of your {sent} messages in this session.";
             if (sent == 0)
-                message = "PACE recorded none of your messages in this session.";
+                message = "LearnEngine recorded none of your messages in this session.";
 
             if (sent == 1 && recorded == 1)
-                message = "PACE recorded your one message in this session.";
+                message = "LearnEngine recorded your one message in this session.";
 
             if (!history.IsDefaultOrEmpty)
                 await compliance.Append(settings.LearnerId, sessionId, ComplianceEntry.Ended(DateTimeOffset.UtcNow, sent), cancellationToken);

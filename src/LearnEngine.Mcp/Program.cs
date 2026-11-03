@@ -1,4 +1,5 @@
 using LearnEngine.Core.Registration;
+using LearnEngine.Mcp;
 using LearnEngine.Mcp.Prompts;
 using LearnEngine.Mcp.Storage;
 using LearnEngine.Mcp.Tools;
@@ -30,7 +31,7 @@ builder.Services
 builder.Services.AddSingleton(TurnGate.Create());
 
 builder.Services
-    .AddMcpServer()
+    .AddMcpServer(options => options.ServerInstructions = ServerInstructions.Text)
     .WithStdioServerTransport()
     .WithTools<LearnTools>(ToolResults.Options)
     .WithPrompts<LearnPrompts>(ToolResults.Options);

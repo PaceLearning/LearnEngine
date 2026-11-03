@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using LearnEngine.Core.Judging;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Signals;
@@ -9,8 +10,9 @@ using LearnEngine.Core.States;
 namespace LearnEngine.Core.History;
 
 /// <summary>
-/// A short hash of the whole vocabulary the app registered: every signal, state, prior, rate and move, with their descriptions
-/// and in the order they were registered. Every session is stamped with it, so a history is never replayed under another vocabulary.
+/// A short hash of the whole vocabulary the app registered: every signal, state, prior, rate and move, with their descriptions,
+/// and which signals show a move worked or failed, all in the order they were registered.
+/// Every session is stamped with it, so a history is never replayed under another vocabulary.
 /// </summary>
 public sealed class VocabularyFingerprint
 {
@@ -26,7 +28,8 @@ public sealed class VocabularyFingerprint
         SignalCatalog signals,
         StateCatalog states,
         LikelihoodTable likelihoods,
-        MoveCatalog? moves)
+        MoveCatalog? moves,
+        OutcomeSignals? outcomes)
     {
         // Written as JSON so ids and descriptions are escaped and numbers are written the same way in every culture,
         // so no two vocabularies can give the same text.
@@ -76,6 +79,18 @@ public sealed class VocabularyFingerprint
                 writer.WriteStringValue(move.Description);
                 writer.WriteEndArray();
             }
+            writer.WriteEndArray();
+
+            // Judging a picked move depends on them, so a history is never judged under other outcome signals.
+            // An app with none fingerprints them as empty lists.
+            writer.WriteStartArray("success");
+            foreach (var signalId in outcomes?.Success ?? [])
+                writer.WriteStringValue(signalId);
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("failure");
+            foreach (var signalId in outcomes?.Failure ?? [])
+                writer.WriteStringValue(signalId);
             writer.WriteEndArray();
 
             writer.WriteEndObject();

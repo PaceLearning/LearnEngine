@@ -204,12 +204,13 @@ public static class RegistrationExtension
             if (!oddsAdded)
                 throw new InvalidOperationException("The odds are not added. Add them with AddOdds before the history.");
 
-            // Resolved when first used, so every move is in the fingerprint even when moves are added after this call.
+            // Resolved when first used, so every move and outcome signal is in the fingerprint even when they are added after this call.
             services.AddSingleton(provider => VocabularyFingerprint.Create(
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<StateCatalog>(),
                 provider.GetRequiredService<LikelihoodTable>(),
-                provider.GetService<MoveCatalog>()));
+                provider.GetService<MoveCatalog>(),
+                provider.GetService<OutcomeSignals>()));
             services.AddSingleton(provider => HistoryReplayer.Create(
                 provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<VocabularyFingerprint>()));

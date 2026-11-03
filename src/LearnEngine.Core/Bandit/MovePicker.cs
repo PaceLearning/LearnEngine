@@ -39,7 +39,7 @@ public sealed class MovePicker
     public async Task<OneOf<PickedMove, NoMovesInState, UnknownState>> Pick(string learnerId, string stateId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
-        ArgumentNullException.ThrowIfNull(stateId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
 
         var found = allowedMoves.Find(stateId);
         if (found.IsT1)

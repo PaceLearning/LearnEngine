@@ -7,6 +7,7 @@ using LearnEngine.Mcp.Vocabulary;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -31,7 +32,11 @@ builder.Services
 builder.Services.AddSingleton(TurnGate.Create());
 
 builder.Services
-    .AddMcpServer(options => options.ServerInstructions = ServerInstructions.Text)
+    .AddMcpServer(options =>
+    {
+        options.ServerInfo = new Implementation { Name = "learnengine", Title = "LearnEngine", Version = "1.0.0" };
+        options.ServerInstructions = ServerInstructions.Text;
+    })
     .WithStdioServerTransport()
     .WithTools<LearnTools>(ToolResults.Options)
     .WithPrompts<LearnPrompts>(ToolResults.Options);

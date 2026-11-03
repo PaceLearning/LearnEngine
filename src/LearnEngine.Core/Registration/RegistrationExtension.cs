@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
+using LearnEngine.Core.Odds;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
 using Microsoft.Extensions.DependencyInjection;
@@ -140,6 +141,44 @@ public static class RegistrationExtension
                 throw new InvalidOperationException($"These signals have no rates: {string.Join(", ", missing)}. Every signal needs a rate in every state.");
 
             services.AddSingleton(LikelihoodTable.Create(likelihoods));
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the <see cref="OddsEngine"/> and the <see cref="OddsOptions"/> it is used with.
+        /// The fade is how far the belief moves back to the priors before every turn, and the clear margin is how far
+        /// the leading state must be ahead of the runner up to be clear. Both must be from 0 to 1.
+        /// The likelihoods must be added before this call. A value out of range, a missing AddLikelihoods,
+        /// or a second call throws here so a wrong setup stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddOdds(
+            double fade = OddsOptions.DefaultFade,
+            double clearMargin = OddsOptions.DefaultClearMargin)
+        {
+            var added = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(OddsOptions) && !descriptor.IsKeyedService);
+            if (added)
+                throw new InvalidOperationException("The odds are added twice. Call AddOdds once.");
+
+            var likelihoodsAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(LikelihoodTable) && !descriptor.IsKeyedService);
+            if (!likelihoodsAdded)
+                throw new InvalidOperationException("The likelihoods are not added. Add them with AddLikelihoods before the odds.");
+
+            // Written so a NaN fails too, which a pair of separate bound checks would let through.
+            var fadeInRange = fade >= 0 && fade <= 1;
+            if (!fadeInRange)
+                throw new ArgumentOutOfRangeException(nameof(fade), fade, "The fade must be from 0 to 1.");
+
+            var clearMarginInRange = clearMargin >= 0 && clearMargin <= 1;
+            if (!clearMarginInRange)
+                throw new ArgumentOutOfRangeException(nameof(clearMargin), clearMargin, "The clear margin must be from 0 to 1.");
+
+            services.AddSingleton(OddsOptions.Create(fade, clearMargin));
+            services.AddSingleton(provider => OddsEngine.Create(
+                provider.GetRequiredService<StateCatalog>(),
+                provider.GetRequiredService<SignalCatalog>(),
+                provider.GetRequiredService<LikelihoodTable>()));
             return services;
         }
     }

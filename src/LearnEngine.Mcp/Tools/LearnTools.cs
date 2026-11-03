@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
+using LearnEngine.Core.History;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Sessions;
 using LearnEngine.Core.Signals;
@@ -13,7 +14,7 @@ namespace LearnEngine.Mcp.Tools;
 
 /// <summary>
 /// The tools the AI calls while it teaches: start a session, report every student message as signal ids and get the
-/// move to make next.
+/// move to make next, and end the session with how many messages were recorded.
 /// </summary>
 [McpServerToolType]
 public sealed class LearnTools(
@@ -21,6 +22,7 @@ public sealed class LearnTools(
     SignalCatalog signalCatalog,
     MoveCatalog moves,
     StateCatalog states,
+    IHistoryStore histories,
     ComplianceLog compliance,
     TurnGate gate,
     ServerSettings settings)
@@ -197,6 +199,52 @@ public sealed class LearnTools(
 
             var report = TurnReport.Create(turn, belief.IsClear, move, teach, StateSummary.Create(summary, confidence), missed, next);
             return ToolResults.Structured(report);
+        }
+        finally
+        {
+            gate.Leave();
+        }
+    }
+
+    /// <summary>
+    /// Ends a session and gives how many of the student's messages were recorded, to tell the student.
+    /// </summary>
+    [McpServerTool(
+        Name = "end_session",
+        Title = "End learning session",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = false,
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(SessionEnded))]
+    [Description("Ends a learning session and returns how many of the student's messages were recorded. Call it when the student stops learning for now, and tell them the message it returns.")]
+    public async Task<CallToolResult> EndSession(
+        [Description("The sessionId start_session returned.")] string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!FileNames.IsSafe(sessionId))
+            return ToolResults.Error($"The sessionId \"{sessionId}\" is not valid. Use the sessionId start_session returned.");
+
+        await gate.Enter(cancellationToken);
+        try
+        {
+            var history = await histories.Load(settings.LearnerId, sessionId, cancellationToken);
+            var recorded = history.Count(historyEvent => historyEvent is LearnerTurn);
+            var last = await compliance.Last(settings.LearnerId, sessionId, cancellationToken);
+            var sent = Math.Max(last?.HighestTurn ?? 0, recorded);
+
+            var message = $"PACE recorded {recorded} of your {sent} messages in this session.";
+            if (sent == 0)
+                message = "PACE recorded none of your messages in this session.";
+
+            if (sent == 1 && recorded == 1)
+                message = "PACE recorded your one message in this session.";
+
+            if (!history.IsDefaultOrEmpty)
+                await compliance.Append(settings.LearnerId, sessionId, ComplianceEntry.Ended(DateTimeOffset.UtcNow, sent), cancellationToken);
+
+            return ToolResults.Structured(SessionEnded.Create(sessionId, recorded, sent, message));
         }
         finally
         {

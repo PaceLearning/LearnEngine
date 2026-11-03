@@ -1,5 +1,6 @@
 using LearnEngine.Core.Registration;
 using LearnEngine.Mcp.Storage;
+using LearnEngine.Mcp.Tools;
 using LearnEngine.Mcp.Vocabulary;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -25,8 +26,11 @@ builder.Services
     .AddTeachingVocabulary()
     .AddLearnEngine();
 
+builder.Services.AddSingleton(TurnGate.Create());
+
 builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport();
+    .WithStdioServerTransport()
+    .WithTools<LearnTools>(ToolResults.Options);
 
 await builder.Build().RunAsync();

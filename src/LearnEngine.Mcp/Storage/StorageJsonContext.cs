@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using LearnEngine.Mcp.Compliance;
 
 namespace LearnEngine.Mcp.Storage;
 
@@ -9,4 +10,5 @@ namespace LearnEngine.Mcp.Storage;
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(SavedScore))]
+[JsonSerializable(typeof(ComplianceEntry))]
 internal sealed partial class StorageJsonContext : JsonSerializerContext;

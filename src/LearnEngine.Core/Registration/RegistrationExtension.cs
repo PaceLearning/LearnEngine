@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using LearnEngine.Core.Bandit;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
@@ -212,6 +213,61 @@ public static class RegistrationExtension
                 provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<VocabularyFingerprint>()));
             services.TryAddSingleton<IHistoryStore>(_ => InMemoryHistoryStore.Create());
+            return services;
+        }
+
+        /// <summary>
+        /// Allows a move in a state, with how many times it worked and was tried there across all learners, and registers
+        /// the <see cref="AllowedMoveCatalog"/> built from every allowed move. A learner with no score of their own starts from these counts.
+        /// The catalog is built once, when it is first resolved, so moves allowed after the service provider is built are never seen.
+        /// The state must be added with AddStates and the move with AddMove before this call. An empty or unknown id,
+        /// a move allowed twice in the same state, or counts below 0 or with more worked than tried throw here so a wrong
+        /// vocabulary stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddMoveFor(string stateId, string moveId, int worked, int tried)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(moveId);
+
+            var states = services
+                .Where(descriptor => descriptor.ServiceType == typeof(StateCatalog) && !descriptor.IsKeyedService)
+                .Select(descriptor => descriptor.ImplementationInstance as StateCatalog)
+                .FirstOrDefault(catalog => catalog is not null);
+            if (states is null)
+                throw new InvalidOperationException($"The states are not added, so the move \"{moveId}\" cannot be allowed in \"{stateId}\". Add them with AddStates before AddMoveFor.");
+
+            var knownState = states.Find(stateId).IsT0;
+            if (!knownState)
+                throw new InvalidOperationException($"The state \"{stateId}\" is not added. Add it with AddStates before AddMoveFor.");
+
+            var knownMove = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(MoveRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is MoveRegistration registration
+                && registration.Move.Id == moveId);
+            if (!knownMove)
+                throw new InvalidOperationException($"The move \"{moveId}\" is not added. Add it with AddMove before AddMoveFor.");
+
+            var taken = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(AllowedMoveRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is AllowedMoveRegistration registration
+                && registration.StartingScore.StateId == stateId
+                && registration.StartingScore.MoveId == moveId);
+            if (taken)
+                throw new InvalidOperationException($"The move \"{moveId}\" is allowed twice in the state \"{stateId}\".");
+
+            if (tried < 0)
+                throw new ArgumentOutOfRangeException(nameof(tried), tried, $"The move \"{moveId}\" in the state \"{stateId}\" cannot be tried fewer than 0 times.");
+
+            var workedInRange = worked >= 0 && worked <= tried;
+            if (!workedInRange)
+                throw new ArgumentOutOfRangeException(nameof(worked), worked, $"The move \"{moveId}\" in the state \"{stateId}\" must have worked from 0 to {tried} times, the times it was tried.");
+
+            services.AddSingleton(AllowedMoveRegistration.Create(MoveScore.Create(stateId, moveId, worked, tried)));
+            services.TryAddSingleton(provider => AllowedMoveCatalog.Create(
+                provider.GetRequiredService<StateCatalog>(),
+                [.. provider.GetServices<AllowedMoveRegistration>().Select(registration => registration.StartingScore)]));
             return services;
         }
     }

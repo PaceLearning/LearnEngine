@@ -11,8 +11,10 @@ using ModelContextProtocol.Protocol;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Stdout carries only the JSON-RPC messages of the stdio transport, so every log line goes to stderr.
+// Stdout carries only the JSON-RPC messages of the stdio transport, so every log line goes to stderr. Only warnings
+// and errors are written, so the host's log of the server is not filled with a line for every call.
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 // The Docker image sets LEARNENGINE_DATA to its /data volume. Run outside Docker, the files go to a local folder.
 var dataFolder = Environment.GetEnvironmentVariable("LEARNENGINE_DATA");

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using LearnEngine.Core.History;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
@@ -179,6 +180,38 @@ public static class RegistrationExtension
                 provider.GetRequiredService<StateCatalog>(),
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<LikelihoodTable>()));
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the <see cref="VocabularyFingerprint"/> every session is stamped with, the <see cref="HistoryReplayer"/>
+        /// that rebuilds a belief from a history, and an <see cref="InMemoryHistoryStore"/> as the <see cref="IHistoryStore"/>.
+        /// To keep histories somewhere else, register your own <see cref="IHistoryStore"/> before this call and it is kept.
+        /// The odds must be added before this call. A missing AddOdds or a second call throws here so a wrong setup stops
+        /// the app at startup.
+        /// </summary>
+        public IServiceCollection AddHistory()
+        {
+            var added = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(HistoryReplayer) && !descriptor.IsKeyedService);
+            if (added)
+                throw new InvalidOperationException("The history is added twice. Call AddHistory once.");
+
+            var oddsAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(OddsEngine) && !descriptor.IsKeyedService);
+            if (!oddsAdded)
+                throw new InvalidOperationException("The odds are not added. Add them with AddOdds before the history.");
+
+            // Resolved when first used, so every move is in the fingerprint even when moves are added after this call.
+            services.AddSingleton(provider => VocabularyFingerprint.Create(
+                provider.GetRequiredService<SignalCatalog>(),
+                provider.GetRequiredService<StateCatalog>(),
+                provider.GetRequiredService<LikelihoodTable>(),
+                provider.GetService<MoveCatalog>()));
+            services.AddSingleton(provider => HistoryReplayer.Create(
+                provider.GetRequiredService<OddsEngine>(),
+                provider.GetRequiredService<VocabularyFingerprint>()));
+            services.TryAddSingleton<IHistoryStore>(_ => InMemoryHistoryStore.Create());
             return services;
         }
     }

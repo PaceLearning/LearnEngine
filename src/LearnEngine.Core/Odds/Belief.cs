@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using OneOf;
 
 namespace LearnEngine.Core.Odds;
 
@@ -45,5 +46,18 @@ public sealed class Belief
         var runnerUp = ranked.Count > 1 ? ranked[1] : null;
         var margin = leader.Odds - (runnerUp?.Odds ?? 0);
         return new(all, leader, runnerUp, margin);
+    }
+
+    /// <summary>
+    /// Gives the leader when it is ahead of the runner up by at least the given margin, or says the leader is not clear.
+    /// Only a clear leader lets a move be picked.
+    /// </summary>
+    public OneOf<StateOdds, NoClearLeader> ClearLeader(double clearMargin)
+    {
+        var clear = Margin >= clearMargin;
+        if (!clear)
+            return NoClearLeader.Create(Margin);
+
+        return Leader;
     }
 }

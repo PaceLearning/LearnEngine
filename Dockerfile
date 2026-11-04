@@ -9,6 +9,7 @@ WORKDIR /src
 # Restored on their own first, so a change to the code does not download the packages again.
 COPY Directory.Packages.props LearnEngine.slnx ./
 COPY src/LearnEngine.Core/LearnEngine.Core.csproj src/LearnEngine.Core/
+COPY src/LearnEngine.Teaching/LearnEngine.Teaching.csproj src/LearnEngine.Teaching/
 COPY src/LearnEngine.Mcp/LearnEngine.Mcp.csproj src/LearnEngine.Mcp/
 RUN rid=linux-x64 && if [ "$TARGETARCH" = "arm64" ]; then rid=linux-arm64; fi \
     && dotnet restore src/LearnEngine.Mcp/LearnEngine.Mcp.csproj -r $rid

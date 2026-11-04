@@ -3,7 +3,7 @@ using LearnEngine.Mcp;
 using LearnEngine.Mcp.Prompts;
 using LearnEngine.Mcp.Storage;
 using LearnEngine.Mcp.Tools;
-using LearnEngine.Mcp.Vocabulary;
+using LearnEngine.Teaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

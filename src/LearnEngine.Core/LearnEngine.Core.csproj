@@ -5,6 +5,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>LearnEngine.Core</PackageId>
+    <Version>0.1.0-preview.1</Version>
+    <Authors>PaceLearning</Authors>
+    <Description>Helps an AI tutor decide what to do next: keeps odds on the state a learner is in from the signals the AI reports, and learns which teaching move works for that learner in that state.</Description>
+    <RepositoryUrl>https://github.com/PaceLearning/LearnEngine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
   <ItemGroup>

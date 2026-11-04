@@ -8,6 +8,7 @@
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LearnEngine.Core\LearnEngine.Core.csproj" />
+    <ProjectReference Include="..\LearnEngine.Teaching\LearnEngine.Teaching.csproj" />
   </ItemGroup>
 
 </Project>

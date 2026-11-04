@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>LearnEngine.Teaching</PackageId>
+    <Version>0.1.0-preview.1</Version>
+    <Authors>PaceLearning</Authors>
+    <Description>The teaching vocabulary LearnEngine ships with: the signals an AI tutor reports, the states the engine keeps odds on, the moves it picks from and how a picked move is judged.</Description>
+    <RepositoryUrl>https://github.com/PaceLearning/LearnEngine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LearnEngine.Core\LearnEngine.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,11 +1,12 @@
 using LearnEngine.Core.Registration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace LearnEngine.Mcp.Vocabulary;
+namespace LearnEngine.Teaching;
 
 /// <summary>
-/// Registers the teaching vocabulary the server ships with, so it works out of the box: the signals the AI reports,
+/// Registers the teaching vocabulary LearnEngine ships with, so a host works out of the box: the signals the AI reports,
 /// the states the engine keeps odds on, the moves it picks from and how a picked move is judged.
+/// The whole vocabulary is in this one file, so another vocabulary replaces this file and nothing else.
 /// </summary>
 public static class RegistrationExtension
 {

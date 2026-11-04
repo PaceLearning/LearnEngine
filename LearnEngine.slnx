@@ -5,5 +5,9 @@
   <Folder Name="/src/">
     <Project Path="src/LearnEngine.Core/LearnEngine.Core.csproj" />
     <Project Path="src/LearnEngine.Mcp/LearnEngine.Mcp.csproj" />
+    <Project Path="src/LearnEngine.Teaching/LearnEngine.Teaching.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LearnEngine.Core.Tests/LearnEngine.Core.Tests.csproj" />
   </Folder>
 </Solution>

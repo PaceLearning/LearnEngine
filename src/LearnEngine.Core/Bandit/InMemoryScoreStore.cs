@@ -30,20 +30,29 @@ public sealed class InMemoryScoreStore : IScoreStore
     }
 
     /// <inheritdoc/>
-    public Task Save(string learnerId, MoveScore score, CancellationToken cancellationToken)
+    public Task<MoveScore> Add(string learnerId, MoveScore starting, bool worked, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
-        ArgumentNullException.ThrowIfNull(score);
+        ArgumentNullException.ThrowIfNull(starting);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var countsInRange = score.Tried >= 0 && score.Worked >= 0 && score.Worked <= score.Tried;
+        var countsInRange = starting.Tried >= 0 && starting.Worked >= 0 && starting.Worked <= starting.Tried;
         if (!countsInRange)
-            throw new ArgumentOutOfRangeException(nameof(score), score, "A score must have been tried 0 or more times and have worked from 0 to the times it was tried.");
+            throw new ArgumentOutOfRangeException(nameof(starting), starting, "A score must have been tried 0 or more times and have worked from 0 to the times it was tried.");
 
-        scores.AddOrUpdate(
-            (learnerId, score.StateId),
-            [score],
-            (_, saved) => [.. saved.Where(savedScore => savedScore.MoveId != score.MoveId), score]);
-        return Task.CompletedTask;
+        var workedCount = worked ? 1 : 0;
+
+        // The update runs again when another add changed the state's scores first, so every add counts once.
+        var updated = scores.AddOrUpdate(
+            (learnerId, starting.StateId),
+            _ => [MoveScore.Create(starting.StateId, starting.MoveId, starting.Worked + workedCount, starting.Tried + 1)],
+            (_, saved) =>
+            {
+                var current = saved.FirstOrDefault(savedScore => savedScore.MoveId == starting.MoveId) ?? starting;
+                var next = MoveScore.Create(starting.StateId, starting.MoveId, current.Worked + workedCount, current.Tried + 1);
+                return [.. saved.Where(savedScore => savedScore.MoveId != starting.MoveId), next];
+            });
+        var score = updated.First(savedScore => savedScore.MoveId == starting.MoveId);
+        return Task.FromResult(score);
     }
 }

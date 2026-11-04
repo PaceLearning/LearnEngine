@@ -175,11 +175,7 @@ public sealed class MoveJudge
         // instead of counting it twice when the history is judged again.
         await histories.Append(learnerId, sessionId, judged, cancellationToken);
 
-        var saved = await scores.Load(learnerId, judged.StateId, cancellationToken);
-        var current = saved.FirstOrDefault(score => score.MoveId == judged.MoveId) ?? starting;
-        var worked = judged.Worked ? 1 : 0;
-        var updated = MoveScore.Create(judged.StateId, judged.MoveId, current.Worked + worked, current.Tried + 1);
-        await scores.Save(learnerId, updated, cancellationToken);
-        return updated;
+        // The store adds the judgment in one step, because the learner's other sessions may judge the same move at once.
+        return await scores.Add(learnerId, starting, judged.Worked, cancellationToken);
     }
 }

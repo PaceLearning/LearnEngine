@@ -141,7 +141,7 @@ public sealed class MoveJudgeTests
         var score = await judge.Record(Learner, Session, MoveJudged.Create(First, One, true), CancellationToken.None);
 
         Assert.Equal(MoveScore.Create(First, One, 6, 11), score);
-        var history = await histories.Load(Learner, Session, CancellationToken.None);
+        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
         var recorded = Assert.IsType<MoveJudged>(Assert.Single(history));
         Assert.True(recorded.Worked);
     }
@@ -159,6 +159,21 @@ public sealed class MoveJudgeTests
         Assert.Equal(MoveScore.Create(First, One, 6, 12), score);
         var saved = await scores.Load(Learner, First, CancellationToken.None);
         Assert.Equal([score], saved.ToArray());
+    }
+
+    [Fact]
+    public async Task Record_ManyAtOnce_CountsEveryJudgment()
+    {
+        using var provider = Create();
+        var judge = provider.GetRequiredService<MoveJudge>();
+        var scores = provider.GetRequiredService<IScoreStore>();
+
+        var records = Enumerable.Range(0, 50)
+            .Select(index => Task.Run(() => judge.Record(Learner, $"session_{index}", MoveJudged.Create(First, One, true), CancellationToken.None)));
+        await Task.WhenAll(records);
+
+        var saved = await scores.Load(Learner, First, CancellationToken.None);
+        Assert.Equal(MoveScore.Create(First, One, 55, 60), Assert.Single(saved));
     }
 
     [Fact]

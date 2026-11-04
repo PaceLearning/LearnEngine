@@ -77,7 +77,7 @@ public sealed class MovePickerTests
         using var provider = Picker(("one", 5, 10), ("two", 5, 10));
         var picker = provider.GetRequiredService<MovePicker>();
         var scores = provider.GetRequiredService<IScoreStore>();
-        await scores.Save(Learner, MoveScore.Create("only", "one", 0, 10), CancellationToken.None);
+        await scores.Add(Learner, MoveScore.Create("only", "one", 0, 9), false, CancellationToken.None);
 
         var picked = await picker.Pick(Learner, "only", CancellationToken.None);
         var otherLearner = await picker.Pick("someone_else", "only", CancellationToken.None);

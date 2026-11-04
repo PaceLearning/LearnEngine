@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using LearnEngine.Core.History;
+using OneOf;
 
 namespace LearnEngine.Mcp.Storage;
 
@@ -42,14 +43,14 @@ public sealed class FileHistoryStore : IHistoryStore
     }
 
     /// <inheritdoc/>
-    public async Task<ImmutableArray<HistoryEvent>> Load(string learnerId, string sessionId, CancellationToken cancellationToken)
+    public async Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         if (!FileNames.IsSafe(learnerId) || !FileNames.IsSafe(sessionId))
             throw new ArgumentException($"The learner id \"{learnerId}\" or the session id \"{sessionId}\" is not a safe file name.");
 
         var path = Path.Combine(folder, learnerId, sessionId + ".jsonl");
         if (!File.Exists(path))
-            return [];
+            return ImmutableArray<HistoryEvent>.Empty;
 
         var lines = await File.ReadAllLinesAsync(path, cancellationToken);
         var history = ImmutableArray.CreateBuilder<HistoryEvent>(lines.Length);
@@ -62,7 +63,7 @@ public sealed class FileHistoryStore : IHistoryStore
             // would give a belief the session never had, so the session stops here instead.
             var read = HistoryEventJson.Read(lines[index]);
             if (read.IsT1)
-                throw new InvalidDataException($"Line {index + 1} of {path} is not a history event: {read.AsT1.Reason}");
+                return BrokenHistory.Create(history.Count, $"Line {index + 1} of {path} is not a history event: {read.AsT1.Reason}");
 
             history.Add(read.AsT0);
         }

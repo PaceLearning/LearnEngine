@@ -1,6 +1,8 @@
+using System.Collections.Immutable;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Sessions;
 using Microsoft.Extensions.DependencyInjection;
+using OneOf;
 using Xunit;
 using static LearnEngine.Core.Tests.TestVocabulary;
 
@@ -24,8 +26,8 @@ public sealed class SessionEngineTests
         Assert.True(started.IsT0);
         Assert.Equal(FirstPrior, started.AsT0.All[0].Odds, 10);
         Assert.True(started.AsT0.IsClear);
-        var history = await histories.Load(Learner, Session, CancellationToken.None);
-        var start = Assert.IsType<SessionStarted>(Assert.Single(history));
+        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var start =Assert.IsType<SessionStarted>(Assert.Single(history));
         Assert.Equal(provider.GetRequiredService<VocabularyFingerprint>().Value, start.Fingerprint);
     }
 
@@ -37,13 +39,13 @@ public sealed class SessionEngineTests
         var histories = provider.GetRequiredService<IHistoryStore>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
         await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
-        var before = await histories.Load(Learner, Session, CancellationToken.None);
+        var before = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
 
         var started = await sessions.StartSession(Learner, Session, CancellationToken.None);
 
         Assert.True(started.IsT1);
         Assert.Equal(SessionAlreadyStarted.Create(Learner, Session), started.AsT1);
-        Assert.Equal(before.Length, (await histories.Load(Learner, Session, CancellationToken.None)).Length);
+        Assert.Equal(before.Length, (await histories.Load(Learner, Session, CancellationToken.None)).AsT0.Length);
     }
 
     [Fact]
@@ -71,7 +73,7 @@ public sealed class SessionEngineTests
 
         Assert.True(reported.IsT1);
         Assert.Equal("not.a.signal", Assert.Single(reported.AsT1).Id);
-        Assert.Single(await histories.Load(Learner, Session, CancellationToken.None));
+        Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
     }
 
     [Fact]
@@ -89,7 +91,7 @@ public sealed class SessionEngineTests
         Assert.True(reported.AsT0.Belief.IsClear);
         Assert.Equal(One, reported.AsT0.Pick.AsT0.Move.Id);
         Assert.True(reported.AsT0.Judgment.IsT2);
-        var history = await histories.Load(Learner, Session, CancellationToken.None);
+        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
         Assert.Collection(history,
             historyEvent => Assert.IsType<SessionStarted>(historyEvent),
             historyEvent => Assert.IsType<LearnerTurn>(historyEvent),
@@ -174,6 +176,45 @@ public sealed class SessionEngineTests
         Assert.Equal(after.GetRequiredService<VocabularyFingerprint>().Value, reported.AsT3.Expected);
         Assert.Equal(before.GetRequiredService<VocabularyFingerprint>().Value, reported.AsT3.Found);
         Assert.True(belief.IsT2);
-        Assert.Single(await store.Load(Learner, Session, CancellationToken.None));
+        Assert.Single((await store.Load(Learner, Session, CancellationToken.None)).AsT0);
+    }
+
+    [Fact]
+    public async Task HistoryCannotBeRead_GivesBrokenHistoryAndKeepsNothing()
+    {
+        var store = UnreadableHistoryStore.Create();
+        using var provider = Create(services => services.AddSingleton<IHistoryStore>(store));
+        var sessions = provider.GetRequiredService<SessionEngine>();
+
+        var started = await sessions.StartSession(Learner, Session, CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
+
+        Assert.True(started.IsT1);
+        Assert.True(reported.IsT4);
+        Assert.Equal(UnreadableHistoryStore.Broken, reported.AsT4);
+        Assert.True(belief.IsT3);
+        Assert.Equal(0, store.Appended);
+    }
+
+    /// <summary>A store whose kept events can no longer be read back, as after an event changed shape.</summary>
+    private sealed class UnreadableHistoryStore : IHistoryStore
+    {
+        public static readonly BrokenHistory Broken = BrokenHistory.Create(0, "The event cannot be read.");
+
+        private UnreadableHistoryStore() { }
+
+        public int Appended { get; private set; }
+
+        public static UnreadableHistoryStore Create() => new();
+
+        public Task Append(string learnerId, string sessionId, HistoryEvent historyEvent, CancellationToken cancellationToken)
+        {
+            Appended++;
+            return Task.CompletedTask;
+        }
+
+        public Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>>(Broken);
     }
 }

@@ -229,7 +229,11 @@ public sealed class LearnTools(
         await gate.Enter(cancellationToken);
         try
         {
-            var history = await histories.Load(settings.LearnerId, sessionId, cancellationToken);
+            var loaded = await histories.Load(settings.LearnerId, sessionId, cancellationToken);
+            if (loaded.IsT1)
+                return ToolResults.Error("This session's history cannot be read, so LearnEngine cannot say how many messages it recorded. Tell the student the session ended.");
+
+            var history = loaded.AsT0;
             var recorded = history.Count(historyEvent => historyEvent is LearnerTurn);
             var last = await compliance.Last(settings.LearnerId, sessionId, cancellationToken);
             var sent = Math.Max(last?.HighestTurn ?? 0, recorded);

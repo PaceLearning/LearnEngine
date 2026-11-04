@@ -16,8 +16,11 @@ public interface IScoreStore
     Task<ImmutableArray<MoveScore>> Load(string learnerId, string stateId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Saves the given learner's score of a move in a state, replacing the one saved before for the same state and move.
-    /// A score tried fewer than 0 times, or that worked fewer than 0 times or more times than it was tried, throws.
+    /// Adds one judgment to the given learner's score of the starting score's move in its state: one more try, and one
+    /// more worked when it worked. A learner with no score of their own for the move starts from the starting score.
+    /// Gives the learner's new score. The add is one step in the store, so two judgments of the same move added at once,
+    /// such as from two sessions of the learner, both count.
+    /// A starting score tried fewer than 0 times, or that worked fewer than 0 times or more times than it was tried, throws.
     /// </summary>
-    Task Save(string learnerId, MoveScore score, CancellationToken cancellationToken);
+    Task<MoveScore> Add(string learnerId, MoveScore starting, bool worked, CancellationToken cancellationToken);
 }

@@ -58,15 +58,17 @@ public sealed class SessionEngine
     /// <summary>
     /// Starts the given learner's session: its history begins with a session start stamped with the registered
     /// vocabulary and the fade and clear margin the app added the odds with. Gives the belief from the priors.
-    /// A session that already has a history is kept as it is and gives <see cref="SessionAlreadyStarted"/>.
+    /// A session that already has a history, even one the store cannot read back, is kept as it is and gives
+    /// <see cref="SessionAlreadyStarted"/>.
     /// </summary>
     public async Task<OneOf<SessionBelief, SessionAlreadyStarted>> StartSession(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var history = await histories.Load(learnerId, sessionId, cancellationToken);
-        if (!history.IsDefaultOrEmpty)
+        var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
+        var started = loaded.IsT1 || !loaded.AsT0.IsDefaultOrEmpty;
+        if (started)
             return SessionAlreadyStarted.Create(learnerId, sessionId);
 
         var start = SessionStarted.Create(fingerprint.Value, options.Fade, options.ClearMargin);
@@ -82,8 +84,8 @@ public sealed class SessionEngine
     /// Report one turn of a session at a time, since two turns reported at once could both be kept before either is judged.
     /// Ids that are not registered give the unknown signals in the order reported, a session with no history gives
     /// <see cref="SessionNotStarted"/>, a history stamped with another vocabulary gives <see cref="OtherVocabulary"/>,
-    /// and a history that cannot be replayed gives <see cref="BrokenHistory"/>. Each of these is found before the turn is
-    /// kept, so nothing is kept.
+    /// and a history that cannot be read back or replayed gives <see cref="BrokenHistory"/>. Each of these is found before
+    /// the turn is kept, so nothing is kept.
     /// </summary>
     public async Task<OneOf<TurnResult, ImmutableArray<UnknownSignal>, SessionNotStarted, OtherVocabulary, BrokenHistory>> ReportTurn(
         string learnerId,
@@ -107,7 +109,11 @@ public sealed class SessionEngine
         if (unknown.Length > 0)
             return unknown;
 
-        var history = await histories.Load(learnerId, sessionId, cancellationToken);
+        var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
+        if (loaded.IsT1)
+            return loaded.AsT1;
+
+        var history = loaded.AsT0;
         if (history.IsDefaultOrEmpty)
             return SessionNotStarted.Create(learnerId, sessionId);
 
@@ -173,14 +179,18 @@ public sealed class SessionEngine
     /// <summary>
     /// Gives what the engine believes about the learner now, rebuilt from the session's history, without reporting a turn.
     /// A session with no history gives <see cref="SessionNotStarted"/>. A history stamped with another vocabulary gives
-    /// <see cref="OtherVocabulary"/>, and a history that cannot be replayed gives <see cref="BrokenHistory"/>.
+    /// <see cref="OtherVocabulary"/>, and a history that cannot be read back or replayed gives <see cref="BrokenHistory"/>.
     /// </summary>
     public async Task<OneOf<SessionBelief, SessionNotStarted, OtherVocabulary, BrokenHistory>> GetBelief(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var history = await histories.Load(learnerId, sessionId, cancellationToken);
+        var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
+        if (loaded.IsT1)
+            return loaded.AsT1;
+
+        var history = loaded.AsT0;
         if (history.IsDefaultOrEmpty)
             return SessionNotStarted.Create(learnerId, sessionId);
 

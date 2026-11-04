@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using OneOf;
 
 namespace LearnEngine.Core.History;
 
@@ -15,7 +16,9 @@ public interface IHistoryStore
 
     /// <summary>
     /// Loads the history of the given learner's session in the order the events were appended, or an empty history
-    /// when nothing was appended to it.
+    /// when nothing was appended to it. A kept event the store cannot read back, such as one written before LearnEngine
+    /// changed the event, gives <see cref="BrokenHistory"/> at its position, so the engine answers with it instead of
+    /// replaying the rest.
     /// </summary>
-    Task<ImmutableArray<HistoryEvent>> Load(string learnerId, string sessionId, CancellationToken cancellationToken);
+    Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken);
 }

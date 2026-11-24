@@ -85,6 +85,23 @@ public sealed class PredictorTests
     }
 
     [Fact]
+    public void UsualSurprise_IsTheAverageSurpriseOfEverySignal()
+    {
+        using var provider = Create();
+        var predictor = provider.GetRequiredService<Predictor>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+        var expected = predictor.Expect(engine.Start(), LearnerModel.Empty, null, null);
+
+        var usual = Predictor.UsualSurprise(expected);
+
+        // The same four chances as above, each adding minus p log p minus (1 - p) log (1 - p).
+        var byHand = new[] { 0.34, 0.28, 0.3, 0.3 }.Sum(chance => -(chance * Math.Log(chance) + (1 - chance) * Math.Log(1 - chance)));
+        Assert.Equal(byHand, usual, Precision);
+        Assert.True(Predictor.Surprise(expected, []) < usual);
+        Assert.True(Predictor.Surprise(expected, [LeansSecond, WentWell, WentBadly]) > usual);
+    }
+
+    [Fact]
     public async Task ReportTurn_SurpriseIsReadAgainstTheKeptExpectation()
     {
         using var provider = Create();

@@ -1,8 +1,64 @@
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject EngineFeed Feed
+@inject FileHistoryStore Histories
+@inject ServerSettings Settings
 
-<header class="le-navbar">
-    <span class="le-brand">LearnEngine</span>
+<header class="pace-navbar">
+    <span class="pace-brand">LearnEngine</span>
+    <span class="grow"></span>
+    <span class="le-endpoint le-mono">MCP at /mcp</span>
 </header>
-<main class="le-main">
-    @Body
-</main>
+<div class="pace-shell-body">
+    <aside class="pace-sidebar">
+        <nav class="pace-sidebar-body" aria-label="Pages and sessions">
+            <NavLink class="pace-rail-link" ActiveClass="is-on" href="how">How it works</NavLink>
+            <NavLink class="pace-rail-link" ActiveClass="is-on" href="vocabulary">Vocabulary</NavLink>
+            <NavLink class="pace-rail-link" ActiveClass="is-on" href="learned">What it learned</NavLink>
+            <span class="pace-tree-label">Sessions</span>
+            @if (sessionIds.IsEmpty)
+            {
+                <span class="pace-tree-none">None yet</span>
+            }
+            @foreach (var sessionId in sessionIds)
+            {
+                // A session is live while the AI reported a turn of it in the last half hour.
+                var live = Feed.Recent.Any(shown => shown.SessionId == sessionId && shown.Time > DateTimeOffset.UtcNow.AddMinutes(-30));
+                <NavLink class="pace-tree-row" ActiveClass="is-on" href="@($"sessions/{sessionId}")">
+                    <span class="le-dot @(live ? "le-live" : "le-ended")"></span>@SessionLabels.For(sessionId, DateTimeOffset.Now)
+                </NavLink>
+            }
+        </nav>
+    </aside>
+    <main class="pace-main-panel">
+        @Body
+    </main>
+</div>
+<nav class="pace-bottombar" aria-label="Main">
+    <NavLink class="pace-tab" ActiveClass="is-on" href="" Match="NavLinkMatch.All">Session</NavLink>
+    <NavLink class="pace-tab" ActiveClass="is-on" href="learned">Learned</NavLink>
+    <NavLink class="pace-tab" ActiveClass="is-on" href="how">How</NavLink>
+    <NavLink class="pace-tab" ActiveClass="is-on" href="vocabulary">Vocabulary</NavLink>
+</nav>
+
+@code {
+    private ImmutableArray<string> sessionIds = [];
+
+    protected override void OnInitialized()
+    {
+        sessionIds = Histories.SessionIds(Settings.LearnerId);
+        Feed.Shown += OnShown;
+    }
+
+    // A new session shows up with its first turn, and every turn may turn a session live.
+    private void OnShown(TurnShown shown) => _ = InvokeAsync(() =>
+    {
+        sessionIds = Histories.SessionIds(Settings.LearnerId);
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// Stops listening to the feed when the page closes.
+    /// </summary>
+    public void Dispose() => Feed.Shown -= OnShown;
+}

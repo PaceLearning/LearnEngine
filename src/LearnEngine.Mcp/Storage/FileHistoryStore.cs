@@ -42,6 +42,26 @@ public sealed class FileHistoryStore : IHistoryStore
         }
     }
 
+    /// <summary>
+    /// Gives the id of every session of the given learner that has a history file, newest first, since the ids
+    /// start_session gives begin with the time the session started. A learner with none gives an empty list.
+    /// </summary>
+    public ImmutableArray<string> SessionIds(string learnerId)
+    {
+        if (!FileNames.IsSafe(learnerId))
+            throw new ArgumentException($"The learner id \"{learnerId}\" is not a safe file name.", nameof(learnerId));
+
+        var learnerFolder = Path.Combine(folder, learnerId);
+        if (!Directory.Exists(learnerFolder))
+            return [];
+
+        return [.. Directory.EnumerateFiles(learnerFolder, "*.jsonl")
+            .Select(Path.GetFileNameWithoutExtension)
+            .OfType<string>()
+            .Where(FileNames.IsSafe)
+            .OrderDescending(StringComparer.Ordinal)];
+    }
+
     /// <inheritdoc/>
     public async Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken)
     {

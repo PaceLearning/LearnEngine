@@ -1,0 +1,207 @@
+@page "/learned"
+@implements IDisposable
+@inject ILearnerModelStore Models
+@inject ServerSettings Settings
+@inject EngineFeed Feed
+@inject SignalCatalog Signals
+@inject StateCatalog States
+@inject LikelihoodTable Likelihoods
+@inject LearningOptions Learning
+@inject AllowedMoveCatalog AllowedMoves
+@inject MoveEffectCatalog Effects
+@inject GoalStates Goals
+
+<PageTitle>What it learned</PageTitle>
+
+<div class="pace-ws-view">
+    @{
+        // Every turn adds the odds of every state, which add up to 1, to the counts of every signal, so the counts of
+        // one signal are the number of messages learned from.
+        var firstSignal = Signals.All[0].Id;
+        var messages = model.Rates.Where(count => count.SignalId == firstSignal).Sum(count => count.Shown + count.NotShown);
+        var goalNames = string.Join(" or ", Goals.StateIds);
+    }
+    <div class="tab-head">
+        <h2 class="title">What it learned</h2>
+        <p class="description">
+            How @Settings.LearnerId learns, kept as soft counts on top of the shared guesses, learned from @Numbers.Count(messages) messages.
+            A learner with no counts is read exactly as the vocabulary says, and moves away from it as their messages come.
+        </p>
+    </div>
+
+    @if (messages <= 0)
+    {
+        <div class="pace-empty">
+            <b>Nothing learned yet</b>
+            <span>Every message the AI reports adds to what the engine knows about how this learner learns.</span>
+        </div>
+    }
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">Their rates</h2>
+            <p class="description">
+                The chance of each signal in each state for this learner, with the shared rate under it. The shared rate counts as
+                @Numbers.Count(Learning.RateWeight) messages, and their own counts are added to it. Green is above the shared rate, red below.
+            </p>
+        </div>
+        <div class="pace-card le-table-wrap">
+            <table class="le-table">
+                <thead>
+                    <tr>
+                        <th>Signal</th>
+                        @foreach (var state in States.All)
+                        {
+                            var evidence = model.Rates.Where(count => count.SignalId == firstSignal && count.StateId == state.Id).Sum(count => count.Shown + count.NotShown);
+                            <th>@state.Id<br /><span class="le-muted">@Numbers.Count(evidence) messages</span></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var signal in Signals.All)
+                    {
+                        <tr>
+                            <td class="le-mono">@signal.Id</td>
+                            @foreach (var state in States.All)
+                            {
+                                var shared = Likelihoods.Find(signal.Id, state.Id).AsT0;
+                                var own = model.Rate(shared, Learning.RateWeight);
+                                var moved = own - shared.Rate >= 0.005 ? "le-up" : shared.Rate - own >= 0.005 ? "le-down" : "";
+                                <td class="le-num"><b class="@moved">@Numbers.Two(own)</b><small>@Numbers.Two(shared.Rate)</small></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">What each move does for them</h2>
+            <p class="description">
+                For each move allowed in a state, the chance it brings this learner to @goalNames by their next message, against the shared guess,
+                and how many of their own messages came after it there. No move is the fade back to the priors.
+            </p>
+        </div>
+        <div class="pace-card le-table-wrap">
+            <table class="le-table">
+                <thead>
+                    <tr>
+                        <th>State</th>
+                        <th class="is-left">Move</th>
+                        <th>To a goal</th>
+                        <th>Shared</th>
+                        <th>Their turns</th>
+                        <th class="is-left">Most likely next</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (stateId, moveId) in AllowedMoves.All.Select(allowed => (allowed.StateId, (string?)allowed.MoveId))
+                        .Concat(States.All.Select(state => (state.Id, (string?)null))))
+                    {
+                        var effect = Effects.For(stateId, moveId);
+                        var toGoal = Goals.StateIds.Sum(goal => model.Effect(effect, goal));
+                        var sharedToGoal = Goals.StateIds.Sum(goal => effect.ChanceOf(goal));
+                        var steps = model.Steps(stateId, moveId);
+                        var intoGoal = Goals.StateIds.Sum(goal => model.Steps(stateId, moveId, goal));
+                        var next = States.All.OrderByDescending(state => model.Effect(effect, state.Id)).First();
+                        var moved = toGoal - sharedToGoal >= 0.005 ? "le-up" : sharedToGoal - toGoal >= 0.005 ? "le-down" : "";
+                        <tr>
+                            <td><span class="le-dot" style="background: var(--le-@stateId, var(--pace-fg-4))"></span> @stateId</td>
+                            <td class="is-left le-mono">@(moveId ?? "no move")</td>
+                            <td class="le-num"><b class="@moved">@Numbers.Percent(toGoal)</b></td>
+                            <td class="le-num le-muted">@Numbers.Percent(sharedToGoal)</td>
+                            <td class="le-num">
+                                @Numbers.Count(steps)
+                                @if (steps >= 1)
+                                {
+                                    <small>@Numbers.Count(intoGoal) to a goal</small>
+                                }
+                            </td>
+                            <td class="is-left">@next.Id <span class="le-muted">@Numbers.Percent(model.Effect(effect, next.Id))</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">Their topics</h2>
+            <p class="description">Every topic id this learner has had, the state they were most often in on it, and the topic they went to next most often.</p>
+        </div>
+        @if (model.Topics.IsEmpty)
+        {
+            <div class="pace-empty">
+                <b>No topics yet</b>
+                <span>Topics come from the topic id the AI sends with each message.</span>
+            </div>
+        }
+        @if (!model.Topics.IsEmpty)
+        {
+            <div class="pace-card le-table-wrap">
+                <table class="le-table">
+                    <thead>
+                        <tr>
+                            <th>Topic</th>
+                            <th>Messages</th>
+                            <th>In a goal state</th>
+                            <th class="is-left">Most often</th>
+                            <th class="is-left">Then went to</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var topic in model.Topics)
+                        {
+                            var onTopic = model.TopicStates.Where(count => count.Topic == topic).ToList();
+                            var turns = onTopic.Sum(count => count.Count);
+                            var inGoal = onTopic.Where(count => Goals.Contains(count.StateId)).Sum(count => count.Count);
+                            var most = onTopic.OrderByDescending(count => count.Count).FirstOrDefault();
+                            var link = model.TopicLinks.Where(count => count.FromTopic == topic).OrderByDescending(count => count.Count).FirstOrDefault();
+                            <tr>
+                                <td class="le-mono">@topic</td>
+                                <td class="le-num">@Numbers.Count(turns)</td>
+                                <td class="le-num">@(turns > 0 ? Numbers.Percent(inGoal / turns) : "none")</td>
+                                <td class="is-left">@(most?.StateId ?? "none")</td>
+                                <td class="is-left">
+                                    @if (link is null)
+                                    {
+                                        <span class="le-muted">nothing yet</span>
+                                    }
+                                    @if (link is not null)
+                                    {
+                                        <span class="le-mono">@link.ToTopic</span> <span class="le-muted">@Numbers.Count(link.Count) times</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private LearnerModel model = LearnerModel.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Feed.Shown += OnShown;
+        model = await Models.Load(Settings.LearnerId, CancellationToken.None);
+    }
+
+    // Every kept turn adds to the model, so the page reads it again.
+    private void OnShown(TurnShown shown) => _ = InvokeAsync(async () =>
+    {
+        model = await Models.Load(Settings.LearnerId, CancellationToken.None);
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// Stops listening to the feed when the page closes.
+    /// </summary>
+    public void Dispose() => Feed.Shown -= OnShown;
+}

@@ -1,0 +1,244 @@
+@page "/how"
+@inject OddsEngine Engine
+@inject Predictor Predictor
+@inject MoveChooser Chooser
+@inject SignalCatalog Signals
+@inject StateCatalog States
+@inject LikelihoodTable Likelihoods
+@inject MoveEffectCatalog Effects
+@inject AllowedMoveCatalog AllowedMoves
+@inject GoalStates Goals
+@inject OddsOptions Odds
+@inject LearningOptions Learning
+@inject ServerSettings Settings
+
+<PageTitle>How it works</PageTitle>
+
+<div class="pace-ws-view">
+    @{
+        var goalNames = string.Join(" or ", Goals.StateIds);
+        // The plan's example, worked_example from stuck, when the vocabulary allows it.
+        var exampleMove = AllowedMoves.All.FirstOrDefault(allowed => allowed.StateId == "stuck" && allowed.MoveId == "worked_example") ?? AllowedMoves.All[0];
+        var example = Effects.For(exampleMove.StateId, exampleMove.MoveId);
+        var exampleGoal = Goals.StateIds.Sum(goal => example.ChanceOf(goal));
+        var learnedRate = (0.20 * Learning.RateWeight + 1.2) / (Learning.RateWeight + 1.2 + 9.8);
+    }
+    <div class="tab-head">
+        <h2 class="title">How it works</h2>
+        <p class="description">
+            LearnEngine helps an AI tutor decide what to do next. It never sees the student's words, only what the AI says about each
+            message. Before each message it predicts what comes, and it learns how this student learns from how far off it was.
+        </p>
+    </div>
+
+    <div class="le-loop">
+        <div class="pace-card"><span class="n">1</span><b>Expect</b><span>From the odds and the move the AI is about to make, the engine says which state, signals and topic come next.</span></div>
+        <div class="pace-card"><span class="n">2</span><b>Report</b><span>The student writes. The AI sends the signal ids, the move it used and a topic id.</span></div>
+        <div class="pace-card"><span class="n">3</span><b>Learn</b><span>The odds move, and what came is added to this student's own rates, move effects and topic links.</span></div>
+        <div class="pace-card"><span class="n">4</span><b>Pick</b><span>For each move allowed now, the engine predicts where it leads for this student and picks the one most likely to reach @goalNames.</span></div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">1. Signals, not words</h2>
+            <p class="description">The AI reads the message and picks from a fixed list of @Signals.All.Length signals. A message can have several, or none.</p>
+        </div>
+        <div class="le-prose">
+            <p>"I don't get it, can you show me?" becomes <span class="le-sig">says.dont_get_it</span> <span class="le-sig">asks.for_help</span>.
+            "ok" becomes <span class="le-sig">reply.minimal</span>. With them the AI sends a short topic id for what the message is about,
+            such as <span class="le-sig">recursion.base_case</span>, and the move it made in its last reply. Only these ids are sent and kept.</p>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">2. Where a move leads</h2>
+            <p class="description">Every move made in a state has a guess of where it leads by the next message. Making no move is a move too.</p>
+        </div>
+        <div class="le-prose">
+            <p>For example @example.MoveId made in @example.FromStateId leads to @goalNames @Numbers.Percent(exampleGoal) of the time, as a guess
+            that counts as @Numbers.Count(example.Weight) messages. When no move is made, the odds fade @Numbers.Percent(Odds.Fade) back toward
+            where they started, which is how the engine worked before it learned moves.</p>
+            <p>Before each message the engine predicts the odds: for each state, the sum over every state now of its odds times the chance that
+            the move the AI made leads from there to it, under this student's own move effects.</p>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">3. The odds</h2>
+            <p class="description">Each state has a chance of being the one the student is in. They always add up to 100%.</p>
+        </div>
+        <div class="le-prose">
+            <p>Every signal has a rate in every state: how often it shows up on one message while a student is in that state. After the
+            prediction, the engine multiplies each state by this student's rate of every signal that showed up, and by one minus the rate of
+            every signal that did not, then rescales. A message with no signals still moves the odds, because nothing showing up says something too.</p>
+        </div>
+        <div class="pace-card le-table-wrap le-example">
+            <p class="le-cap">Example: the third message of a new student, @string.Join(" and ", exampleSignals), after asks.how_or_why and reply.minimal</p>
+            <table class="le-table">
+                <thead>
+                    <tr>
+                        <th>State</th>
+                        <th>Before</th>
+                        <th>Predicted, no move</th>
+                        <th>Rates of the signals</th>
+                        <th>After</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var index = 0; index < States.All.Length; index++)
+                    {
+                        var stateId = States.All[index].Id;
+                        var change = after.All[index].Odds - before.All[index].Odds;
+                        <tr>
+                            <td><span class="le-dot" style="background: var(--le-@stateId, var(--pace-fg-4))"></span> @stateId</td>
+                            <td class="le-num">@Numbers.Percent(before.All[index].Odds)</td>
+                            <td class="le-num">@Numbers.Percent(predicted.All[index].Odds)</td>
+                            <td class="le-num">@string.Join(" and ", exampleSignals.Select(signalId => Numbers.Two(Likelihoods.Find(signalId, stateId).AsT0.Rate)))</td>
+                            <td class="le-num @(change > 0.005 ? "le-up" : change < -0.005 ? "le-down" : "")"><b>@Numbers.Percent(after.All[index].Odds)</b></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="le-prose le-example">
+            <p><b>@after.Leader.StateId</b> now leads by @Numbers.Percent(after.Margin). It is clear when it leads by at least @Numbers.Percent(Odds.ClearMargin).</p>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">4. Expected next</h2>
+            <p class="description">Before the message comes, the engine says what it expects, and keeps it, so it can be measured against what came.</p>
+        </div>
+        <div class="le-prose">
+            <p>The chance of each signal is the sum over every state of its predicted odds times this student's rate of the signal in it.
+            The chance of each topic comes from how often this student went from the last topic to it, plus one for staying on the same topic,
+            plus a little for topics where they were not in @goalNames, since a student may come back to those.</p>
+            <p>How unexpected a message was is its surprise: minus the log of the chance of exactly the signals that came. The usual surprise
+            is what a message has on average under the same expectation, so a message at or below it came as expected.</p>
+        </div>
+        <div class="pace-card le-table-wrap le-example">
+            <p class="le-cap">Example: what was expected of that third message</p>
+            <table class="le-table">
+                <thead><tr><th>Signal</th><th>Chance</th><th>Came</th></tr></thead>
+                <tbody>
+                    @foreach (var chance in expected.Signals.Where(chance => !exampleSignals.Contains(chance.SignalId)).OrderByDescending(chance => chance.Chance).Take(3))
+                    {
+                        <tr>
+                            <td class="le-mono">@chance.SignalId</td>
+                            <td class="le-num">@Numbers.Percent(chance.Chance)</td>
+                            <td>no</td>
+                        </tr>
+                    }
+                    @foreach (var signalId in exampleSignals)
+                    {
+                        <tr>
+                            <td class="le-mono">@signalId</td>
+                            <td class="le-num">@Numbers.Percent(expected.Signals.First(chance => chance.SignalId == signalId).Chance)</td>
+                            <td>yes</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="le-prose le-example">
+            <p>Its surprise was @Numbers.One(Predictor.Surprise(expected, exampleSignals)), against a usual @Numbers.One(Predictor.UsualSurprise(expected)),
+            so it was @(Predictor.Surprise(expected, exampleSignals) <= Predictor.UsualSurprise(expected) ? "as expected" : "more than usually unexpected").</p>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">5. Learning how this student learns</h2>
+            <p class="description">Every message adds to this student's own counts, on top of the shared guesses. Nothing is a whole count: each is a chance.</p>
+        </div>
+        <div class="le-prose">
+            <p><b>Rates.</b> The chance the student was in each state after the message is added to their counts of every signal in that state,
+            as shown or not shown. Their rate is the shared rate counted as @Numbers.Count(Learning.RateWeight) messages plus their own counts.
+            A shared rate of 0.20, with 1.2 shown and 9.8 not shown while stuck, gives (0.20 × @Numbers.Count(Learning.RateWeight) + 1.2) /
+            (@Numbers.Count(Learning.RateWeight) + 1.2 + 9.8) = @Numbers.Two(learnedRate).</p>
+            <p><b>Move effects.</b> The chance of each pair of a state before and a state after is added to the counts of the move that was made.
+            So a move that keeps leading this student to @goalNames is worth more for them than the guess says.</p>
+            <p><b>Topics.</b> One link is added from the last topic to this one, and the chance of each state to this topic.</p>
+            <p>A new student is exactly the shared guesses, and moves away from them as their messages come. Counts only ever add up, so two
+            sessions can learn at once.</p>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">6. Picking a move</h2>
+            <p class="description">A move is only picked when the leading state is clear. Until then the AI teaches as it normally would.</p>
+        </div>
+        <div class="le-prose">
+            <p>For each move the clear state allows, the goal chance is the sum over every state of its odds times this student's chance that the
+            move leads from there to @goalNames. To it is added a bonus that is larger the less evidence there is for the move: the square root
+            of 2 times the log of the evidence of all the allowed moves, divided by the evidence of this one. The evidence is the student's own
+            messages after the move plus what the guess counts as. The highest wins, and the answer says why, from the counts.</p>
+        </div>
+        @if (!weighed.IsEmpty)
+        {
+            <div class="pace-card le-table-wrap le-example">
+                <p class="le-cap">Example: the moves for @after.Leader.StateId after that third message, for a new student</p>
+                <table class="le-table">
+                    <thead><tr><th>Move</th><th>Goal chance</th><th>Evidence</th><th>Bonus</th><th>Score</th></tr></thead>
+                    <tbody>
+                        @foreach (var move in weighed)
+                        {
+                            <tr>
+                                <td class="le-mono">@move.MoveId</td>
+                                <td class="le-num">@Numbers.Two(move.GoalChance)</td>
+                                <td class="le-num">@Numbers.Count(move.Evidence)</td>
+                                <td class="le-num">+ @Numbers.Two(move.Bonus)</td>
+                                <td class="le-num"><b>@Numbers.Two(move.Bound)</b></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">What is kept</h2>
+            <p class="description">Everything stays in the data folder on this computer, @Settings.DataFolder.</p>
+        </div>
+        <div class="le-prose">
+            <p>Each session is kept as a list of events: the session started, each message's signals, topic and the move made before it, what
+            the message taught the engine (the odds after it and the counts it added), what was expected of the next message, and each move
+            picked with its goal chance and why. The student's own counts change with every message, so a session is read back from these
+            events, never worked out again with today's counts. The counts are kept per student, across sessions.</p>
+            <p>The rates and the move effects are guesses for now. They should be replaced with numbers measured from real sessions.</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ImmutableArray<string> exampleSignals = [];
+    private Belief before = null!;
+    private Belief predicted = null!;
+    private Belief after = null!;
+    private Expectation expected = null!;
+    private ImmutableArray<WeighedMove> weighed = [];
+
+    // The example is worked out by the engine itself, for a student it knows nothing about yet.
+    protected override void OnInitialized()
+    {
+        var empty = LearnerModel.Empty;
+        exampleSignals = [.. new[] { "says.dont_get_it", "asks.for_help" }.Where(signalId => Signals.Find(signalId).IsT0)];
+        ImmutableArray<string> first = [.. new[] { "asks.how_or_why" }.Where(signalId => Signals.Find(signalId).IsT0)];
+        ImmutableArray<string> second = [.. new[] { "reply.minimal" }.Where(signalId => Signals.Find(signalId).IsT0)];
+
+        var afterFirst = Engine.Apply(Engine.Predict(Engine.Start(), empty, null), empty, first).AsT0;
+        before = Engine.Apply(Engine.Predict(afterFirst, empty, null), empty, second).AsT0;
+        predicted = Engine.Predict(before, empty, null);
+        after = Engine.Apply(predicted, empty, exampleSignals).AsT0;
+        expected = Predictor.Expect(before, empty, null, null);
+
+        var found = Chooser.Weigh(after, empty, after.Leader.StateId);
+        weighed = found.IsT0 ? found.AsT0 : [];
+    }
+}

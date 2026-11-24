@@ -1,0 +1,151 @@
+@page "/vocabulary"
+@inject SignalCatalog Signals
+@inject StateCatalog States
+@inject LikelihoodTable Likelihoods
+@inject MoveCatalog Moves
+@inject AllowedMoveCatalog AllowedMoves
+@inject MoveEffectCatalog Effects
+@inject GoalStates Goals
+@inject OddsOptions Odds
+@inject LearningOptions Learning
+@inject VocabularyFingerprint Fingerprint
+
+<PageTitle>Vocabulary</PageTitle>
+
+<div class="pace-ws-view">
+    <div class="tab-head">
+        <h2 class="title">Vocabulary</h2>
+        <p class="description">
+            The shared guesses every learner starts from: the signals the AI reports, the states the engine keeps odds on, the rate of each
+            signal in each state, the moves, where each move leads and the goal states. Fade @Numbers.Two(Odds.Fade), clear margin
+            @Numbers.Two(Odds.ClearMargin), rate weight @Numbers.Count(Learning.RateWeight). Fingerprint <code>@Fingerprint.Value</code>.
+        </p>
+    </div>
+
+    <div class="pace-card le-table-wrap">
+        <table class="le-table">
+            <thead>
+                <tr><th>Signal</th><th class="is-left">When the AI reports it</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var signal in Signals.All)
+                {
+                    <tr><td class="le-mono">@signal.Id</td><td class="is-left">@signal.Description</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="le-section">
+        <div class="pace-card le-table-wrap">
+            <table class="le-table">
+                <thead>
+                    <tr><th>State</th><th>Prior</th><th>Goal</th><th class="is-left">What it means</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var state in States.All)
+                    {
+                        <tr>
+                            <td><span class="le-dot" style="background: var(--le-@state.Id, var(--pace-fg-4))"></span> @state.Id</td>
+                            <td class="le-num">@Numbers.Two(state.Prior)</td>
+                            <td>@(Goals.Contains(state.Id) ? "yes" : "")</td>
+                            <td class="is-left">@state.Description</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">Rates</h2>
+            <p class="description">The chance a signal shows up on one message while the learner is in a state.</p>
+        </div>
+        <div class="pace-card le-table-wrap">
+            <table class="le-table">
+                <thead>
+                    <tr>
+                        <th>Signal</th>
+                        @foreach (var state in States.All)
+                        {
+                            <th>@state.Id</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var signal in Signals.All)
+                    {
+                        <tr>
+                            <td class="le-mono">@signal.Id</td>
+                            @foreach (var state in States.All)
+                            {
+                                <td class="le-num">@Numbers.Two(Likelihoods.Find(signal.Id, state.Id).AsT0.Rate)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">Moves</h2>
+            <p class="description">What the AI does when the engine gives it a move.</p>
+        </div>
+        <div class="pace-card le-table-wrap">
+            <table class="le-table">
+                <thead>
+                    <tr><th>Move</th><th class="is-left">What the AI does</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var move in Moves.All)
+                    {
+                        <tr><td class="le-mono">@move.Id</td><td class="is-left">@move.Description</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="le-section">
+        <div class="tab-head">
+            <h2 class="title">Where each move leads</h2>
+            <p class="description">
+                For each move a state allows, the chance of each state by the next message, and how many messages the guess counts as.
+                No move fades the odds back to the priors by @Numbers.Percent(Effects.Fade).
+            </p>
+        </div>
+        <div class="pace-card le-table-wrap">
+            <table class="le-table">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th class="is-left">Move</th>
+                        <th>Weight</th>
+                        @foreach (var state in States.All)
+                        {
+                            <th>@state.Id</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var allowed in AllowedMoves.All)
+                    {
+                        var effect = Effects.For(allowed.StateId, allowed.MoveId);
+                        <tr>
+                            <td><span class="le-dot" style="background: var(--le-@allowed.StateId, var(--pace-fg-4))"></span> @allowed.StateId</td>
+                            <td class="is-left le-mono">@allowed.MoveId</td>
+                            <td class="le-num">@Numbers.Count(effect.Weight)</td>
+                            @foreach (var state in States.All)
+                            {
+                                <td class="le-num @(Goals.Contains(state.Id) ? "le-up" : "")">@Numbers.Two(effect.ChanceOf(state.Id))</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

@@ -94,4 +94,19 @@ public sealed class Predictor
         var reported = signalIds.ToHashSet(StringComparer.Ordinal);
         return -expected.Signals.Sum(signal => Math.Log(reported.Contains(signal.SignalId) ? signal.Chance : 1 - signal.Chance));
     }
+
+    /// <summary>
+    /// The surprise a turn has on average under the expectation, so a turn's own <see cref="Surprise"/> can be read
+    /// against it: a turn at or below it came as expected. For each signal with chance p it adds
+    /// minus p times the natural log of p, minus 1 minus p times the natural log of 1 minus p. A signal with a chance
+    /// of 0 or 1 adds 0.
+    /// </summary>
+    public static double UsualSurprise(Expectation expected)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+
+        return expected.Signals.Sum(signal => signal.Chance <= 0 || signal.Chance >= 1
+            ? 0
+            : -(signal.Chance * Math.Log(signal.Chance) + (1 - signal.Chance) * Math.Log(1 - signal.Chance)));
+    }
 }

@@ -65,6 +65,42 @@ public sealed class MoveChooserTests
     }
 
     [Fact]
+    public void Weigh_GivesEveryAllowedMoveInOrder_AndChooseTakesTheHighestBound()
+    {
+        using var provider = Create();
+        var chooser = provider.GetRequiredService<MoveChooser>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+        var model = LearnerModel.Create([], [
+            EffectCount.Create(First, Two, First, 6),
+            EffectCount.Create(First, Two, Second, 2)]);
+
+        var weighed = chooser.Weigh(engine.Start(), model, First).AsT0;
+        var chosen = chooser.Choose(engine.Start(), model, First).AsT0;
+
+        Assert.Equal([One, Two], weighed.Select(move => move.MoveId));
+        Assert.Equal([0, 8], weighed.Select(move => move.OwnSteps));
+        Assert.All(weighed, move => Assert.Equal(move.OwnSteps + 10, move.Evidence));
+        var total = weighed.Sum(move => move.Evidence);
+        Assert.All(weighed, move => Assert.Equal(Math.Sqrt(2 * Math.Log(total) / move.Evidence), move.Bonus, 10));
+        var best = weighed.MaxBy(move => move.Bound)!;
+        Assert.Equal(best.MoveId, chosen.Move.Id);
+        Assert.Equal(best.Bound, chosen.Bound);
+        Assert.Equal(best.GoalChance, chosen.GoalChance);
+    }
+
+    [Fact]
+    public void Weigh_StateWithNoMoves_GivesNoMovesInState()
+    {
+        using var provider = Create();
+        var chooser = provider.GetRequiredService<MoveChooser>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+
+        var weighed = chooser.Weigh(engine.Start(), LearnerModel.Empty, Second);
+
+        Assert.Equal(Second, weighed.AsT1.StateId);
+    }
+
+    [Fact]
     public void Choose_SeenLess_GetsTheLargerBonus()
     {
         using var provider = Create();

@@ -1,0 +1,274 @@
+@page "/"
+@page "/sessions/{SessionId}"
+@implements IDisposable
+@inject SessionReader Reader
+@inject FileHistoryStore Histories
+@inject ServerSettings Settings
+@inject EngineFeed Feed
+@inject MoveCatalog Moves
+
+<PageTitle>LearnEngine</PageTitle>
+
+<div class="pace-ws-view">
+    @if (shownId is null)
+    {
+        <div class="pace-empty">
+            <b>No sessions yet</b>
+            <span>Connect an AI to this app, such as with <code>claude mcp add --transport http learnengine http://localhost:5080/mcp</code>,
+            and start learning. Each message the student sends shows up here as the signals the AI reported.</span>
+        </div>
+    }
+
+    @if (problem is not null)
+    {
+        <div class="tab-head"><h2 class="title">@SessionLabels.For(shownId ?? "", DateTimeOffset.Now)</h2></div>
+        <div class="le-note">@problem</div>
+    }
+
+    @if (view is not null)
+    {
+        var live = Feed.Recent.Any(shown => shown.SessionId == view.SessionId && shown.Time > DateTimeOffset.UtcNow.AddMinutes(-30));
+        var leader = view.Belief.Leader;
+        <div class="tab-head">
+            <h2 class="title">@SessionLabels.For(view.SessionId, DateTimeOffset.Now)</h2>
+            <p class="description">@(live ? "Live." : "Read back from its history.") @view.Turns.Length @(view.Turns.Length == 1 ? "turn" : "turns").</p>
+        </div>
+
+        <div class="pace-card le-now">
+            <div>
+                <p class="le-cap">The odds now</p>
+                <div class="le-bars">
+                    @foreach (var stateOdds in view.Belief.All)
+                    {
+                        <div class="le-bar @(stateOdds.StateId == leader.StateId ? "is-lead" : "")">
+                            <span class="name"><span class="le-dot" style="background: var(--le-@stateOdds.StateId, var(--pace-fg-4))"></span>@stateOdds.StateId</span>
+                            <span class="le-track"><span class="le-fill" style="width: @Numbers.Percent(stateOdds.Odds); background: var(--le-@stateOdds.StateId, var(--pace-fg-4))"></span></span>
+                            <span class="val le-num">@Numbers.Percent(stateOdds.Odds)</span>
+                        </div>
+                    }
+                </div>
+                <p class="le-line">
+                    <b>@leader.StateId</b> leads by @Numbers.Percent(view.Belief.Margin).
+                    @(view.IsClear ? "That is clear." : $"It needs {Numbers.Percent(view.ClearMargin)} to be clear.")
+                </p>
+            </div>
+            <div class="le-move">
+                @if (!view.IsClear)
+                {
+                    <p class="le-cap">Move</p>
+                    <h3>Teach normally</h3>
+                    <p>No state is clear yet, so the engine gives no move.</p>
+                }
+                @if (view.IsClear && view.Weighed.IsEmpty)
+                {
+                    <p class="le-cap">Move, for @leader.StateId</p>
+                    <h3>Teach normally</h3>
+                    <p>@leader.StateId allows no moves.</p>
+                }
+                @if (view.IsClear && !view.Weighed.IsEmpty)
+                {
+                    var picked = view.Pick?.MoveId;
+                    <p class="le-cap">Move, for @leader.StateId</p>
+                    @if (view.Pick is not null)
+                    {
+                        <h3>@view.Pick.MoveId</h3>
+                        <p>@(Moves.Find(view.Pick.MoveId).Match(move => move.Description, unknown => ""))</p>
+                        <p class="le-said">@view.Pick.Why Goal chance @Numbers.Percent(view.Pick.GoalChance).</p>
+                    }
+                    <div class="le-why">
+                        <span class="is-head"><span>Allowed move</span><span>Goal</span><span>Evidence</span><span>Score</span></span>
+                        @foreach (var move in view.Weighed)
+                        {
+                            <span class="@(move.MoveId == picked ? "is-pick" : "")">
+                                <span class="le-mono">@move.MoveId</span>
+                                <span class="le-num">@Numbers.Percent(move.GoalChance)</span>
+                                <span class="le-num le-muted" title="@($"{Numbers.Count(move.OwnSteps)} of this learner's own turns plus the shared guess")">@Numbers.Count(move.Evidence)</span>
+                                <span class="le-num">@Numbers.Two(move.Bound)</span>
+                            </span>
+                        }
+                    </div>
+                    <p class="le-small">Weighed with what the engine knows about this learner now. Evidence is their own turns after the move plus the turns the shared guess counts as.</p>
+                }
+            </div>
+        </div>
+
+        <div class="pace-card le-expect">
+            <div>
+                <p class="le-cap">Expected next: signals</p>
+                @if (view.ExpectedNext is null)
+                {
+                    <p class="le-muted">Nothing was kept as expected.</p>
+                }
+                @if (view.ExpectedNext is not null)
+                {
+                    <div class="le-bars">
+                        @foreach (var chance in view.ExpectedNext.Signals.OrderByDescending(chance => chance.Chance).Take(5))
+                        {
+                            <div class="le-bar">
+                                <span class="name le-mono">@chance.SignalId</span>
+                                <span class="le-track"><span class="le-fill" style="width: @Numbers.Percent(chance.Chance)"></span></span>
+                                <span class="val le-num">@Numbers.Percent(chance.Chance)</span>
+                            </div>
+                        }
+                    </div>
+                    <p class="le-small">@(view.ExpectedNext.MoveId is null ? "Assuming no move is made." : $"Assuming the AI makes {view.ExpectedNext.MoveId}.")</p>
+                }
+            </div>
+            <div>
+                <p class="le-cap">Expected next: topics</p>
+                @if (view.ExpectedNext is null || view.ExpectedNext.Topics.IsEmpty)
+                {
+                    <p class="le-muted">No topic to expect yet. Topics come from the topic ids the AI sends.</p>
+                }
+                @if (view.ExpectedNext is not null && !view.ExpectedNext.Topics.IsEmpty)
+                {
+                    <div class="le-bars">
+                        @foreach (var chance in view.ExpectedNext.Topics.Take(5))
+                        {
+                            <div class="le-bar">
+                                <span class="name le-mono">@chance.Topic</span>
+                                <span class="le-track"><span class="le-fill" style="width: @Numbers.Percent(chance.Chance)"></span></span>
+                                <span class="val le-num">@Numbers.Percent(chance.Chance)</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="le-section">
+            <div class="tab-head">
+                <h2 class="title">Turns</h2>
+                <p class="description">Newest first. Each signal shows the chance the engine gave it before the message came. A turn is as expected when its surprise is at most the usual surprise of what was expected.</p>
+            </div>
+            @if (view.Turns.IsEmpty)
+            {
+                <div class="pace-empty">
+                    <b>No turns yet</b>
+                    <span>Each message the student sends shows up here as the signals the AI reported.</span>
+                </div>
+            }
+            @if (!view.Turns.IsEmpty)
+            {
+                <div class="le-turns">
+                    @foreach (var turn in Enumerable.Reverse(view.Turns))
+                    {
+                        var mark = "is-none";
+                        var markText = "Nothing was expected";
+                        if (turn.Surprise is not null && turn.UsualSurprise is not null)
+                        {
+                            mark = turn.Surprise <= turn.UsualSurprise ? "is-expected" : turn.Surprise <= turn.UsualSurprise + 1 ? "is-little" : "is-odd";
+                            markText = turn.Surprise <= turn.UsualSurprise ? "As expected" : turn.Surprise <= turn.UsualSurprise + 1 ? "A little unexpected" : "Unexpected";
+                            markText += $": surprise {Numbers.One(turn.Surprise.Value)}, usual {Numbers.One(turn.UsualSurprise.Value)}";
+                        }
+                        <div class="le-turn">
+                            <span class="no">@turn.Number</span>
+                            <div class="body">
+                                <div class="le-sigs">
+                                    @if (turn.SignalIds.IsEmpty)
+                                    {
+                                        <span class="le-muted">No signals</span>
+                                    }
+                                    @foreach (var signalId in turn.SignalIds)
+                                    {
+                                        var chance = turn.Expected?.Signals.FirstOrDefault(expected => expected.SignalId == signalId)?.Chance;
+                                        <span class="le-sig">@signalId @if (chance is not null) { <small>@Numbers.Percent(chance.Value)</small> }</span>
+                                    }
+                                </div>
+                                <span class="le-what">
+                                    @if (turn.Topic is not null)
+                                    {
+                                        <span>On <b>@turn.Topic</b>@(turn.TopicChance is null ? "." : $", {Numbers.Percent(turn.TopicChance.Value)} expected.") </span>
+                                    }
+                                    @if (turn.MoveMade is not null)
+                                    {
+                                        <span>After <b>@turn.MoveMade</b>. </span>
+                                    }
+                                    @if (turn.Leader is not null)
+                                    {
+                                        <span>@turn.Leader.StateId leads by @Numbers.Percent(turn.Margin)@(turn.IsClear ? ", clear." : ", not clear.") </span>
+                                    }
+                                    @if (turn.Pick is not null)
+                                    {
+                                        <span>Picked <b>@turn.Pick.MoveId</b>, goal chance @Numbers.Percent(turn.Pick.GoalChance).</span>
+                                    }
+                                </span>
+                                <span class="le-mark @mark">@markText</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// The id of the session to show, or null to show the newest one and follow new sessions as they start.
+    /// </summary>
+    [Parameter]
+    public string? SessionId { get; set; }
+
+    private string? shownId;
+    private SessionView? view;
+    private string? problem;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        view = null;
+        await Load();
+    }
+
+    protected override void OnInitialized() => Feed.Shown += OnShown;
+
+    private void OnShown(TurnShown shown)
+    {
+        var follows = SessionId is null || shown.SessionId == shownId;
+        if (follows)
+            _ = InvokeAsync(async () =>
+            {
+                await Load();
+                StateHasChanged();
+            });
+    }
+
+    // Reads the session back from its history. A read that meets the file while a turn is being written keeps the
+    // view as it was, and the feed brings the turn once it is kept.
+    private async Task Load()
+    {
+        shownId = SessionId ?? Histories.SessionIds(Settings.LearnerId).FirstOrDefault();
+        problem = null;
+        if (shownId is null)
+            return;
+
+        if (!FileNames.IsSafe(shownId))
+        {
+            view = null;
+            problem = "This is not a session id.";
+            return;
+        }
+
+        try
+        {
+            var read = await Reader.Read(Settings.LearnerId, shownId, CancellationToken.None);
+            view = read.IsT0 ? read.AsT0 : null;
+            if (read.IsT1)
+                problem = "This session has no history.";
+
+            if (read.IsT2)
+                problem = "This session was kept under another vocabulary, so it is not read back. Its history stays on disk.";
+
+            if (read.IsT3)
+                problem = $"This session's history cannot be read back. {read.AsT3.Reason}";
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Stops listening to the feed when the page closes.
+    /// </summary>
+    public void Dispose() => Feed.Shown -= OnShown;
+}

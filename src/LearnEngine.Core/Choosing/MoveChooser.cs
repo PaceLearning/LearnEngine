@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
@@ -45,6 +46,39 @@ public sealed class MoveChooser
     /// </summary>
     public OneOf<PickedMove, NoMovesInState, UnknownState> Choose(Belief belief, LearnerModel model, string stateId)
     {
+        var weighed = Weigh(belief, model, stateId);
+        if (weighed.IsT1)
+            return weighed.AsT1;
+
+        if (weighed.IsT2)
+            return weighed.AsT2;
+
+        // Only a strictly higher bound replaces the best, so a tie goes to the move allowed first.
+        var best = weighed.AsT0[0];
+        foreach (var move in weighed.AsT0)
+            if (move.Bound > best.Bound)
+                best = move;
+
+        var goalNames = string.Join(" or ", goals.StateIds);
+        var own = Math.Round(model.Steps(stateId, best.MoveId));
+        var intoGoal = Math.Round(goals.StateIds.Sum(goal => model.Steps(stateId, best.MoveId, goal)));
+        var shared = goals.StateIds.Sum(goal => effects.For(stateId, best.MoveId).ChanceOf(goal));
+        var why = $"This learner has not had {best.MoveId} in {stateId} yet, so the shared guess is that it leads to {goalNames} {Math.Round(shared * 100)}% of the time.";
+        if (own >= 1)
+            why = $"For this learner, {best.MoveId} led from {stateId} to {goalNames} {intoGoal} of {own} times.";
+
+        // Every allowed move is found, because registration checked it was added with AddMove first.
+        return PickedMove.Create(moves.Find(best.MoveId).AsT0, best.GoalChance, best.Bound, why);
+    }
+
+    /// <summary>
+    /// Weighs every move allowed in the given state for the learner, as <see cref="Choose"/> weighs them before it
+    /// picks the highest bound, in the order the app allowed them: the goal chance, the learner's own steps, the
+    /// evidence and the bonus of each.
+    /// A state with no moves allowed gives <see cref="NoMovesInState"/>, and an id that is not a state gives <see cref="UnknownState"/>.
+    /// </summary>
+    public OneOf<ImmutableArray<WeighedMove>, NoMovesInState, UnknownState> Weigh(Belief belief, LearnerModel model, string stateId)
+    {
         ArgumentNullException.ThrowIfNull(belief);
         ArgumentNullException.ThrowIfNull(model);
         ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
@@ -60,34 +94,19 @@ public sealed class MoveChooser
             .Select(allowed => (
                 allowed.MoveId,
                 GoalChance: belief.All.Sum(from => from.Odds * goals.StateIds.Sum(goal => model.Effect(effects.For(from.StateId, allowed.MoveId), goal))),
-                Seen: model.Steps(stateId, allowed.MoveId) + effects.For(stateId, allowed.MoveId).Weight))
+                Own: model.Steps(stateId, allowed.MoveId),
+                Weight: effects.For(stateId, allowed.MoveId).Weight))
             .ToList();
-        var totalSeen = weighed.Sum(move => move.Seen);
+        var totalSeen = weighed.Sum(move => move.Own + move.Weight);
 
-        var best = weighed[0];
-        var bestBound = double.NegativeInfinity;
-        foreach (var move in weighed)
-        {
-            // Every weight is above 0, so Seen is too. A total below 1 has a negative log, and gets no bonus.
-            var bound = move.GoalChance + Math.Sqrt(2 * Math.Max(0, Math.Log(totalSeen)) / move.Seen);
-
-            // Only a strictly higher bound replaces the best, so a tie goes to the move allowed first.
-            if (bound > bestBound)
-            {
-                best = move;
-                bestBound = bound;
-            }
-        }
-
-        var goalNames = string.Join(" or ", goals.StateIds);
-        var own = Math.Round(model.Steps(stateId, best.MoveId));
-        var intoGoal = Math.Round(goals.StateIds.Sum(goal => model.Steps(stateId, best.MoveId, goal)));
-        var shared = goals.StateIds.Sum(goal => effects.For(stateId, best.MoveId).ChanceOf(goal));
-        var why = $"This learner has not had {best.MoveId} in {stateId} yet, so the shared guess is that it leads to {goalNames} {Math.Round(shared * 100)}% of the time.";
-        if (own >= 1)
-            why = $"For this learner, {best.MoveId} led from {stateId} to {goalNames} {intoGoal} of {own} times.";
-
-        // Every allowed move is found, because registration checked it was added with AddMove first.
-        return PickedMove.Create(moves.Find(best.MoveId).AsT0, best.GoalChance, bestBound, why);
+        // Every weight is above 0, so the evidence is too. A total below 1 has a negative log, and gets no bonus.
+        return weighed
+            .Select(move => WeighedMove.Create(
+                move.MoveId,
+                move.GoalChance,
+                move.Own,
+                move.Own + move.Weight,
+                Math.Sqrt(2 * Math.Max(0, Math.Log(totalSeen)) / (move.Own + move.Weight))))
+            .ToImmutableArray();
     }
 }

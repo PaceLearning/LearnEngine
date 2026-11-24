@@ -5,7 +5,7 @@ namespace LearnEngine.Core.History;
 /// <summary>
 /// The first event of every session: the vocabulary the session is kept under, the fade it uses and the clear margin
 /// it uses. A history is only replayed under the same vocabulary and always with this fade and clear margin, so it
-/// gives the same belief and the same judgments every time.
+/// gives the same belief every time.
 /// </summary>
 public sealed class SessionStarted : HistoryEvent
 {
@@ -21,7 +21,7 @@ public sealed class SessionStarted : HistoryEvent
 
     /// <summary>
     /// How far the leading state must be ahead of the runner up to be clear in the session, from 0 to 1.
-    /// Only a clear state lets a move be picked, and a picked move is only judged while its state stays clear.
+    /// Only a clear state lets a move be picked.
     /// </summary>
     public double ClearMargin { get; }
 

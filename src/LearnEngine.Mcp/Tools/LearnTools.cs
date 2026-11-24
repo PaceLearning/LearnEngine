@@ -166,14 +166,9 @@ public sealed class LearnTools(
             var repeated = turn <= highestBefore;
             var highestAfter = Math.Max(highestBefore, turn);
 
-            // A move still being judged stays the move to make, since the engine picks no other while it waits for a result.
             MoveToMake? move = null;
             if (belief.IsClear && result.Pick.IsT0)
                 move = MoveToMake.Create(result.Pick.AsT0.Move.Id, result.Pick.AsT0.Move.Description);
-
-            // The engine only picks registered moves, so the move being judged is always found.
-            if (belief.IsClear && result.Pick.IsT2)
-                move = MoveToMake.Create(result.Pick.AsT2.MoveId, moves.Find(result.Pick.AsT2.MoveId).AsT0.Description);
 
             var leader = belief.Leader;
             var runnerUp = belief.RunnerUp;

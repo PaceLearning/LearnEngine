@@ -33,8 +33,8 @@ Students: the full guide, a skill to download and text to paste into a Project a
 
 ## Projects
 
-- `src/LearnEngine.Core`: the engine. It keeps the odds, picks and judges moves, and keeps each session as a history of events. It never stores the learner's words.
-- `src/LearnEngine.Teaching`: the teaching vocabulary, all in `RegistrationExtension.cs`: the signals, the states with their priors, the rate of every signal in every state, the moves allowed in each state and the success and failure signals. A host registers it with `AddTeachingVocabulary()`.
+- `src/LearnEngine.Core`: the engine. It keeps the odds, learns how each learner learns, chooses the move most likely to bring them to a goal state, and keeps each session as a history of events. It never stores the learner's words.
+- `src/LearnEngine.Teaching`: the teaching vocabulary, all in `RegistrationExtension.cs`: the signals, the states with their priors, the rate of every signal in every state, the moves allowed in each state, the goal states and where each move leads. A host registers it with `AddTeachingVocabulary()`.
 - `src/LearnEngine.Mcp`: the MCP server for Claude Desktop, with file stores for one learner.
 - `tests/LearnEngine.Core.Tests`: the tests of the engine.
 

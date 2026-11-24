@@ -21,7 +21,7 @@ var dataFolder = Environment.GetEnvironmentVariable("LEARNENGINE_DATA");
 if (string.IsNullOrWhiteSpace(dataFolder))
     dataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LearnEngine");
 
-// One student runs one server, so every session and score belongs to the same learner.
+// One student runs one server, so every session and the learner model belong to the same learner.
 var learnerId = Environment.GetEnvironmentVariable("LEARNENGINE_LEARNER");
 if (string.IsNullOrWhiteSpace(learnerId))
     learnerId = "me";

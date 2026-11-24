@@ -135,17 +135,20 @@ public sealed class PredictorTests
         Assert.Equal(2, Assert.Single(model.TopicLinks, count => count.FromTopic == "b" && count.ToTopic == "a").Count, Precision);
         Assert.Equal(3, model.TopicStates.Where(count => count.Topic == "a").Sum(count => count.Count), Precision);
 
-        // From a: twice to b, and one for staying on a.
+        // From a: twice to b, and one for staying on a. Each also gets the come back bonus for its share of turns not
+        // in the goal state, which is the first state.
+        var bWeight = 2 + Predictor.ComeBackWeight * model.TopicStates.Where(count => count.Topic == "b" && count.StateId == Second).Sum(count => count.Count) / 2;
+        var aWeight = 1 + Predictor.ComeBackWeight * model.TopicStates.Where(count => count.Topic == "a" && count.StateId == Second).Sum(count => count.Count) / 3;
         var topics = last!.Expected.Topics;
         Assert.Equal(["b", "a"], topics.Select(chance => chance.Topic));
-        Assert.Equal(2.0 / 3, topics[0].Chance, Precision);
-        Assert.Equal(1.0 / 3, topics[1].Chance, Precision);
+        Assert.Equal(bWeight / (aWeight + bWeight), topics[0].Chance, Precision);
+        Assert.Equal(aWeight / (aWeight + bWeight), topics[1].Chance, Precision);
     }
 
     [Fact]
     public void Expect_TopicNotInAGoalState_GetsTheComeBackBonus()
     {
-        using var provider = Create(after: services => services.AddGoalState(First));
+        using var provider = Create();
         var predictor = provider.GetRequiredService<Predictor>();
         var engine = provider.GetRequiredService<OddsEngine>();
         var model = LearnerModel.Create([], [], [], [

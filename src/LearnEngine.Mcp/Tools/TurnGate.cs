@@ -1,8 +1,8 @@
 namespace LearnEngine.Mcp.Tools;
 
 /// <summary>
-/// Lets one report_turn run at a time, because the engine keeps a turn and judges the last move in separate steps and
-/// two turns reported at once could both be kept before either is judged.
+/// Lets one report_turn run at a time, because the engine reads the history, keeps a turn and picks a move in separate
+/// steps, and two turns reported at once would both be kept after the same odds.
 /// </summary>
 public sealed class TurnGate
 {

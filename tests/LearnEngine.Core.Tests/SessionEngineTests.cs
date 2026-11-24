@@ -144,15 +144,21 @@ public sealed class SessionEngineTests
         Assert.True(reported.IsT0);
         Assert.Equal(First, reported.AsT0.Belief.Leader.StateId);
         Assert.True(reported.AsT0.Belief.IsClear);
-        Assert.Equal(One, reported.AsT0.Pick.AsT0.Move.Id);
-        Assert.True(reported.AsT0.Judgment.IsT2);
+        var pick = reported.AsT0.Pick.AsT0;
+        Assert.Equal(One, pick.Move.Id);
         var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
         Assert.Collection(history,
             historyEvent => Assert.IsType<SessionStarted>(historyEvent),
             historyEvent => Assert.IsType<TurnExpected>(historyEvent),
             historyEvent => Assert.IsType<LearnerTurn>(historyEvent),
             historyEvent => Assert.IsType<TurnLearned>(historyEvent),
-            historyEvent => Assert.Equal(One, Assert.IsType<MovePicked>(historyEvent).MoveId),
+            historyEvent =>
+            {
+                var picked = Assert.IsType<MovePicked>(historyEvent);
+                Assert.Equal(One, picked.MoveId);
+                Assert.Equal(pick.GoalChance, picked.GoalChance, 10);
+                Assert.Equal(pick.Why, picked.Why);
+            },
             historyEvent => Assert.Equal(One, Assert.IsType<TurnExpected>(historyEvent).Expected.MoveId));
     }
 
@@ -285,38 +291,16 @@ public sealed class SessionEngineTests
     }
 
     [Fact]
-    public async Task ReportTurn_AfterAPick_JudgesItAndUpdatesTheScore()
+    public async Task ReportTurn_EveryTurnInAClearState_PicksAMove()
     {
         using var provider = Create();
         var sessions = provider.GetRequiredService<SessionEngine>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
         await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        var worked = await sessions.ReportTurn(Learner, Session, [LeansFirst, WentWell], null, null, CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, One, CancellationToken.None);
 
-        var judgment = worked.AsT0.Judgment.AsT0;
-        Assert.True(judgment.Worked);
-        Assert.Equal(First, judgment.Score.StateId);
-        Assert.Equal(One, judgment.Score.MoveId);
-        Assert.Equal(6, judgment.Score.Worked);
-        Assert.Equal(11, judgment.Score.Tried);
-        // one at 6 of 11 is still ahead of two at 5 of 10, even with the bonus two gets for fewer tries.
-        Assert.Equal(One, worked.AsT0.Pick.AsT0.Move.Id);
-        Assert.Equal(6, worked.AsT0.Pick.AsT0.Score.Worked);
-    }
-
-    [Fact]
-    public async Task ReportTurn_WhileAMoveIsBeingJudged_PicksNothingNew()
-    {
-        using var provider = Create();
-        var sessions = provider.GetRequiredService<SessionEngine>();
-        await sessions.StartSession(Learner, Session, CancellationToken.None);
-        await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
-
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
-
-        Assert.Equal(One, reported.AsT0.Pick.AsT2.MoveId);
-        Assert.Equal(1, reported.AsT0.Judgment.AsT1.TurnsLeft);
+        Assert.True(reported.AsT0.Pick.IsT0);
     }
 
     [Fact]

@@ -170,28 +170,23 @@ public sealed class HistoryEventJsonTests
     [Fact]
     public void Write_MovePicked_ReadsBackTheSame()
     {
-        var line = HistoryEventJson.Write(MovePicked.Create("model_clash", "ask_their_picture"));
+        var line = HistoryEventJson.Write(MovePicked.Create("model_clash", "ask_their_picture", 0.75, "For this learner, ask_their_picture led from model_clash to following 3 of 4 times."));
 
         var read = HistoryEventJson.Read(line);
 
-        Assert.Equal("""{"event":"move_picked","state_id":"model_clash","move_id":"ask_their_picture"}""", line);
+        Assert.Equal("""{"event":"move_picked","state_id":"model_clash","move_id":"ask_their_picture","goal_chance":0.75,"why":"For this learner, ask_their_picture led from model_clash to following 3 of 4 times."}""", line);
         var picked = Assert.IsType<MovePicked>(read.AsT0);
         Assert.Equal("model_clash", picked.StateId);
         Assert.Equal("ask_their_picture", picked.MoveId);
+        Assert.Equal(0.75, picked.GoalChance);
+        Assert.Equal("For this learner, ask_their_picture led from model_clash to following 3 of 4 times.", picked.Why);
     }
 
     [Fact]
-    public void Write_MoveJudged_ReadsBackTheSame()
+    public void Read_MoveJudgedOrPickWithoutGoalChance_GivesUnreadableEvent()
     {
-        var line = HistoryEventJson.Write(MoveJudged.Create("following", "keep_going", false));
-
-        var read = HistoryEventJson.Read(line);
-
-        Assert.Equal("""{"event":"move_judged","state_id":"following","move_id":"keep_going","worked":false}""", line);
-        var judged = Assert.IsType<MoveJudged>(read.AsT0);
-        Assert.Equal("following", judged.StateId);
-        Assert.Equal("keep_going", judged.MoveId);
-        Assert.False(judged.Worked);
+        Assert.True(HistoryEventJson.Read("""{"event":"move_judged","state_id":"following","move_id":"keep_going","worked":false}""").IsT1);
+        Assert.True(HistoryEventJson.Read("""{"event":"move_picked","state_id":"following","move_id":"keep_going"}""").IsT1);
     }
 
     [Fact]
@@ -227,7 +222,7 @@ public sealed class HistoryEventJsonTests
     [Fact]
     public void Context_UsedByAHost_WritesAndReadsTheSameJsonAsTheEngine()
     {
-        HistoryEvent historyEvent = MovePicked.Create("stuck", "worked_example");
+        HistoryEvent historyEvent = MovePicked.Create("stuck", "worked_example", 0.7, "Why worked_example.");
 
         var json = JsonSerializer.Serialize(historyEvent, HistoryJsonContext.Default.HistoryEvent);
         var read = JsonSerializer.Deserialize(json, HistoryJsonContext.Default.HistoryEvent);
@@ -247,8 +242,7 @@ public sealed class HistoryEventJsonTests
         [
             SessionStarted.Create("0123456789abcdef", 0.15, 0.15),
             LearnerTurn.Create(["reply.minimal"]),
-            MovePicked.Create("stuck", "worked_example"),
-            MoveJudged.Create("stuck", "worked_example", true),
+            MovePicked.Create("stuck", "worked_example", 0.7, "Why worked_example."),
             TurnExpected.Create(Expectation.Create(null, [StateOdds.Create("stuck", 1)], [SignalChance.Create("reply.minimal", 0.5)], [])),
         ];
 

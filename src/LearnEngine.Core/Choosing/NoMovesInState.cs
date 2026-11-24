@@ -1,4 +1,4 @@
-namespace LearnEngine.Core.Bandit;
+namespace LearnEngine.Core.Choosing;
 
 /// <summary>
 /// The answer when the app allowed no moves in a state, so no move can be picked in it and the tutor keeps going.

@@ -9,7 +9,6 @@ namespace LearnEngine.Mcp.Storage;
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true)]
-[JsonSerializable(typeof(SavedScore))]
 [JsonSerializable(typeof(SavedLearnerModel))]
 [JsonSerializable(typeof(ComplianceEntry))]
 internal sealed partial class StorageJsonContext : JsonSerializerContext;

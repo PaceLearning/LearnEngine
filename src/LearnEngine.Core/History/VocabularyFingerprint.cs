@@ -1,8 +1,8 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Effects;
-using LearnEngine.Core.Judging;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Signals;
@@ -12,7 +12,7 @@ namespace LearnEngine.Core.History;
 
 /// <summary>
 /// A short hash of the whole vocabulary the app registered: every signal, state, prior, rate and move, with their descriptions,
-/// which signals show a move worked or failed, where each move leads, which states are goals, all in the order they
+/// which moves are allowed in which state, where each move leads, which states are goals, all in the order they
 /// were registered, the fade and the rate weight of the learning.
 /// Every session is stamped with it, so a history is never replayed under another vocabulary.
 /// </summary>
@@ -31,7 +31,7 @@ public sealed class VocabularyFingerprint
         StateCatalog states,
         LikelihoodTable likelihoods,
         MoveCatalog? moves,
-        OutcomeSignals? outcomes,
+        AllowedMoveCatalog? allowedMoves,
         MoveEffectCatalog effects,
         GoalStates? goals,
         double rateWeight)
@@ -86,16 +86,16 @@ public sealed class VocabularyFingerprint
             }
             writer.WriteEndArray();
 
-            // Judging a picked move depends on them, so a history is never judged under other outcome signals.
-            // An app with none fingerprints them as empty lists.
-            writer.WriteStartArray("success");
-            foreach (var signalId in outcomes?.Success ?? [])
-                writer.WriteStringValue(signalId);
-            writer.WriteEndArray();
-
-            writer.WriteStartArray("failure");
-            foreach (var signalId in outcomes?.Failure ?? [])
-                writer.WriteStringValue(signalId);
+            // A move is only picked where it is allowed, so a history is never continued under other allowed moves.
+            // An app with none fingerprints them as an empty list.
+            writer.WriteStartArray("allowed_moves");
+            foreach (var allowed in allowedMoves?.All ?? [])
+            {
+                writer.WriteStartArray();
+                writer.WriteStringValue(allowed.StateId);
+                writer.WriteStringValue(allowed.MoveId);
+                writer.WriteEndArray();
+            }
             writer.WriteEndArray();
 
             // Learning changes what a session keeps after each turn, so a session kept before it, or under another

@@ -12,7 +12,7 @@
     <PackageId>LearnEngine.Teaching</PackageId>
     <Version>0.1.0-preview.1</Version>
     <Authors>PaceLearning</Authors>
-    <Description>The teaching vocabulary LearnEngine ships with: the signals an AI tutor reports, the states the engine keeps odds on, the moves it picks from and how a picked move is judged.</Description>
+    <Description>The teaching vocabulary LearnEngine ships with: the signals an AI tutor reports, the states the engine keeps odds on, the moves it chooses from, the goal states and where each move leads.</Description>
     <RepositoryUrl>https://github.com/PaceLearning/LearnEngine</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>

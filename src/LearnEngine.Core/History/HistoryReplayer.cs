@@ -42,23 +42,10 @@ public sealed class HistoryReplayer
     /// made that is not registered, has what a turn learned that is not right after a turn, does not give one odds
     /// per registered state adding up to 1, or adds counts that are not registered or below 0, or has what was expected
     /// of a turn kept twice before it, or not with one odds per registered state adding up to 1, one chance per
-    /// registered signal and a registered move, gives <see cref="BrokenHistory"/>.
+    /// registered signal and a registered move, or has a move picked that is not registered, in a state that is not
+    /// registered or with a goal chance outside 0 to 1, gives <see cref="BrokenHistory"/>.
     /// </summary>
     public OneOf<Belief, OtherVocabulary, BrokenHistory> Replay(ImmutableArray<HistoryEvent> history)
-    {
-        var replayed = ReplayEach(history);
-        if (replayed.IsT1)
-            return replayed.AsT1;
-
-        if (replayed.IsT2)
-            return replayed.AsT2;
-
-        return replayed.AsT0[^1];
-    }
-
-    // The belief after every event of the history, in the same order, read as Replay reads it. Internal so the judge
-    // reads the same beliefs at the same events.
-    internal OneOf<ImmutableArray<Belief>, OtherVocabulary, BrokenHistory> ReplayEach(ImmutableArray<HistoryEvent> history)
     {
         if (history.IsDefaultOrEmpty)
             return BrokenHistory.Create(0, "The history is empty, so it has no session start.");
@@ -81,8 +68,6 @@ public sealed class HistoryReplayer
 
         var belief = engine.Start();
         ImmutableArray<string> stateIds = [.. belief.All.Select(stateOdds => stateOdds.StateId)];
-        var beliefs = ImmutableArray.CreateBuilder<Belief>(history.Length);
-        beliefs.Add(belief);
         var expectedSinceTurn = false;
         for (var index = 1; index < history.Length; index++)
         {
@@ -149,6 +134,18 @@ public sealed class HistoryReplayer
                 expectedSinceTurn = true;
             }
 
+            if (historyEvent is MovePicked picked)
+            {
+                var unknownPick = !stateIds.Contains(picked.StateId) || moves is null || moves.Find(picked.MoveId).IsT1;
+                if (unknownPick)
+                    return BrokenHistory.Create(index, $"The move \"{picked.MoveId}\" is picked in \"{picked.StateId}\", and the move or the state is not registered.");
+
+                // Written so a NaN fails too, which a pair of separate bound checks would let through.
+                var goalChanceInRange = picked.GoalChance >= 0 && picked.GoalChance <= 1 + 1e-6;
+                if (!goalChanceInRange)
+                    return BrokenHistory.Create(index, $"The move \"{picked.MoveId}\" is picked with a goal chance of {picked.GoalChance}, which is not from 0 to 1.");
+            }
+
             if (historyEvent is LearnerTurn turn)
             {
                 expectedSinceTurn = false;
@@ -179,10 +176,8 @@ public sealed class HistoryReplayer
                     belief = Belief.Create(kept.Odds);
                 }
             }
-
-            beliefs.Add(belief);
         }
 
-        return beliefs.MoveToImmutable();
+        return belief;
     }
 }

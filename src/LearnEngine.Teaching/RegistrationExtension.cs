@@ -5,7 +5,7 @@ namespace LearnEngine.Teaching;
 
 /// <summary>
 /// Registers the teaching vocabulary LearnEngine ships with, so a host works out of the box: the signals the AI reports,
-/// the states the engine keeps odds on, the moves it picks from and how a picked move is judged.
+/// the states the engine keeps odds on, the moves it chooses from, the goal states and where each move leads.
 /// The whole vocabulary is in this one file, so another vocabulary replaces this file and nothing else.
 /// </summary>
 public static class RegistrationExtension
@@ -15,12 +15,12 @@ public static class RegistrationExtension
         /// <summary>
         /// Adds the whole teaching vocabulary in the order the engine asks for: the signals, the states with their
         /// priors, the rate of every signal in every state, the odds with the default fade and clear margin, the
-        /// history, the learning with the default rate weight, the moves allowed in each state with their starting
-        /// counts, the goal states, where each allowed move leads, and the success and failure signals.
-        /// The rates, the starting counts and the move effects are guesses, written before any session was recorded,
-        /// and should be replaced by numbers measured from real histories.
-        /// Register the history, score and learner model stores before this call so they are kept instead of the in-memory ones.
-        /// Changing any id, description, prior, rate, goal state, move effect or outcome signal changes the vocabulary
+        /// history, the learning with the default rate weight, the moves allowed in each state, the goal states and
+        /// where each allowed move leads.
+        /// The rates and the move effects are guesses, written before any session was recorded, and should be replaced
+        /// by numbers measured from real histories.
+        /// Register the history and learner model stores before this call so they are kept instead of the in-memory ones.
+        /// Changing any id, description, prior, rate, allowed move, goal state or move effect changes the vocabulary
         /// fingerprint, so sessions started before the change can no longer be continued.
         /// </summary>
         public IServiceCollection AddTeachingVocabulary()
@@ -83,23 +83,22 @@ public static class RegistrationExtension
                 .AddMove("diagram", "Show the idea as a simple picture, such as a text sketch or a table, and walk through it.")
                 .AddMove("slow_down", "Stop adding new ideas. Sum up the one thing that matters in two sentences and ask whether that part is clear.");
 
-            // The starting counts, worked out of tried, are the score every student starts from in each state. They are
-            // guesses too, taken from the walkthrough in samples/LearnEngine.Sample/3-Odds-And-Bandit.md.
+            // The moves the engine may choose from in each state.
             services
-                .AddMoveFor("following", "keep_going", 7, 10)
-                .AddMoveFor("following", "let_them_try", 6, 10)
-                .AddMoveFor("following", "worked_example", 4, 10)
-                .AddMoveFor("model_clash", "ask_their_picture", 7, 10)
-                .AddMoveFor("model_clash", "worked_example", 5, 10)
-                .AddMoveFor("model_clash", "explain_again", 3, 10)
-                .AddMoveFor("stuck", "worked_example", 7, 10)
-                .AddMoveFor("stuck", "diagram", 6, 10)
-                .AddMoveFor("stuck", "explain_again", 4, 10)
-                .AddMoveFor("overloaded", "slow_down", 7, 10)
-                .AddMoveFor("overloaded", "worked_example", 3, 10)
-                .AddMoveFor("overloaded", "keep_going", 2, 10)
-                .AddMoveFor("eager", "let_them_try", 8, 10)
-                .AddMoveFor("eager", "keep_going", 5, 10);
+                .AddMoveFor("following", "keep_going")
+                .AddMoveFor("following", "let_them_try")
+                .AddMoveFor("following", "worked_example")
+                .AddMoveFor("model_clash", "ask_their_picture")
+                .AddMoveFor("model_clash", "worked_example")
+                .AddMoveFor("model_clash", "explain_again")
+                .AddMoveFor("stuck", "worked_example")
+                .AddMoveFor("stuck", "diagram")
+                .AddMoveFor("stuck", "explain_again")
+                .AddMoveFor("overloaded", "slow_down")
+                .AddMoveFor("overloaded", "worked_example")
+                .AddMoveFor("overloaded", "keep_going")
+                .AddMoveFor("eager", "let_them_try")
+                .AddMoveFor("eager", "keep_going");
 
             // The states the engine wants to bring every student to.
             services
@@ -107,10 +106,10 @@ public static class RegistrationExtension
                 .AddGoalState("eager");
 
             // Where each allowed move leads from its state by the student's next message. They are guesses too, written
-            // before any session was recorded: the chance of reaching following or eager is about the starting share
-            // worked out of tried above, and the rest is spread over the other states. Each counts as 10 messages
-            // before a student's own counts move it.
-            services
+            // before any session was recorded: the chance of reaching following or eager is about the share of tries
+            // that worked in the starting counts the engine used before it chose moves by where they lead, and the rest
+            // is spread over the other states. Each counts as 10 messages before a student's own counts move it.
+            return services
                 .AddMoveEffect("following", "keep_going", weight: 10,
                     ("following", 0.55), ("eager", 0.15), ("stuck", 0.15), ("overloaded", 0.10), ("model_clash", 0.05))
                 .AddMoveEffect("following", "let_them_try", weight: 10,
@@ -139,15 +138,6 @@ public static class RegistrationExtension
                     ("following", 0.35), ("eager", 0.45), ("stuck", 0.10), ("overloaded", 0.05), ("model_clash", 0.05))
                 .AddMoveEffect("eager", "keep_going", weight: 10,
                     ("following", 0.35), ("eager", 0.15), ("stuck", 0.15), ("overloaded", 0.25), ("model_clash", 0.10));
-
-            return services
-                .AddSuccessSignal("offers.own_answer")
-                .AddSuccessSignal("answers.correctly")
-                .AddSuccessSignal("says.it_clicked")
-                .AddFailureSignal("says.dont_get_it")
-                .AddFailureSignal("reask.same_concept")
-                .AddFailureSignal("says.overwhelmed")
-                .AddFailureSignal("pushes.back");
         }
     }
 }

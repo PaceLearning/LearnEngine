@@ -6,7 +6,8 @@ namespace LearnEngine.Core.Tests;
 
 /// <summary>
 /// A small vocabulary whose odds can be worked out by hand: two states, two signals that lean one way each, and two
-/// outcome signals with the same rate in both states, so they judge a move without moving the odds.
+/// signals with the same rate in both states, so they do not move the odds. The first state is the goal, and both
+/// moves are allowed in it.
 /// </summary>
 internal static class TestVocabulary
 {
@@ -66,12 +67,9 @@ internal static class TestVocabulary
             .AddMove(Two, "The second move.");
 
         services
-            .AddMoveFor(First, One, 5, 10)
-            .AddMoveFor(First, Two, 5, 10);
-
-        services
-            .AddSuccessSignal(WentWell)
-            .AddFailureSignal(WentBadly)
+            .AddMoveFor(First, One)
+            .AddMoveFor(First, Two)
+            .AddGoalState(First)
             .AddLearnEngine();
 
         after?.Invoke(services);

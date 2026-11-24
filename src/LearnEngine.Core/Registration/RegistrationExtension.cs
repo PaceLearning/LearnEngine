@@ -1,9 +1,8 @@
 using System.Collections.Immutable;
-using LearnEngine.Core.Bandit;
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.Guide;
 using LearnEngine.Core.History;
-using LearnEngine.Core.Judging;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
@@ -362,13 +361,13 @@ public static class RegistrationExtension
             if (!oddsAdded)
                 throw new InvalidOperationException("The odds are not added. Add them with AddOdds before the history.");
 
-            // Resolved when first used, so every move and outcome signal is in the fingerprint even when they are added after this call.
+            // Resolved when first used, so every move, allowed move and goal state is in the fingerprint even when they are added after this call.
             services.AddSingleton(provider => VocabularyFingerprint.Create(
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<StateCatalog>(),
                 provider.GetRequiredService<LikelihoodTable>(),
                 provider.GetService<MoveCatalog>(),
-                provider.GetService<OutcomeSignals>(),
+                provider.GetService<AllowedMoveCatalog>(),
                 provider.GetRequiredService<MoveEffectCatalog>(),
                 provider.GetService<GoalStates>(),
                 provider.GetService<LearningOptions>()?.RateWeight ?? LearningOptions.DefaultRateWeight));
@@ -382,17 +381,14 @@ public static class RegistrationExtension
         }
 
         /// <summary>
-        /// Allows a move in a state, with how many times it worked and was tried there across all learners, and registers
-        /// the <see cref="AllowedMoveCatalog"/> built from every allowed move. A learner with no score of their own starts from these counts.
-        /// It also registers the <see cref="MovePicker"/> that picks a move in a clear state.
+        /// Allows a move in a state, so the engine can choose it when the learner is clearly in that state, and registers
+        /// the <see cref="AllowedMoveCatalog"/> built from every allowed move. Where the move leads is added with
+        /// AddMoveEffect, and the move with the best chance of reaching a goal state is chosen.
         /// The catalog is built once, when it is first resolved, so moves allowed after the service provider is built are never seen.
-        /// An <see cref="InMemoryScoreStore"/> is registered as the <see cref="IScoreStore"/> that keeps each learner's own scores.
-        /// To keep scores somewhere else, register your own <see cref="IScoreStore"/> before the first AddMoveFor and it is kept.
-        /// The state must be added with AddStates and the move with AddMove before this call. An empty or unknown id,
-        /// a move allowed twice in the same state, or counts below 0 or with more worked than tried throw here so a wrong
-        /// vocabulary stops the app at startup.
+        /// The state must be added with AddStates and the move with AddMove before this call. An empty or unknown id, or
+        /// a move allowed twice in the same state, throws here so a wrong vocabulary stops the app at startup.
         /// </summary>
-        public IServiceCollection AddMoveFor(string stateId, string moveId, int worked, int tried)
+        public IServiceCollection AddMoveFor(string stateId, string moveId)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
             ArgumentException.ThrowIfNullOrWhiteSpace(moveId);
@@ -420,160 +416,29 @@ public static class RegistrationExtension
                 descriptor.ServiceType == typeof(AllowedMoveRegistration)
                 && !descriptor.IsKeyedService
                 && descriptor.ImplementationInstance is AllowedMoveRegistration registration
-                && registration.StartingScore.StateId == stateId
-                && registration.StartingScore.MoveId == moveId);
+                && registration.Allowed.StateId == stateId
+                && registration.Allowed.MoveId == moveId);
             if (taken)
                 throw new InvalidOperationException($"The move \"{moveId}\" is allowed twice in the state \"{stateId}\".");
 
-            if (tried < 0)
-                throw new ArgumentOutOfRangeException(nameof(tried), tried, $"The move \"{moveId}\" in the state \"{stateId}\" cannot be tried fewer than 0 times.");
-
-            var workedInRange = worked >= 0 && worked <= tried;
-            if (!workedInRange)
-                throw new ArgumentOutOfRangeException(nameof(worked), worked, $"The move \"{moveId}\" in the state \"{stateId}\" must have worked from 0 to {tried} times, the times it was tried.");
-
-            services.AddSingleton(AllowedMoveRegistration.Create(MoveScore.Create(stateId, moveId, worked, tried)));
+            services.AddSingleton(AllowedMoveRegistration.Create(AllowedMove.Create(stateId, moveId)));
             services.TryAddSingleton(provider => AllowedMoveCatalog.Create(
                 provider.GetRequiredService<StateCatalog>(),
-                [.. provider.GetServices<AllowedMoveRegistration>().Select(registration => registration.StartingScore)]));
-            services.TryAddSingleton<IScoreStore>(_ => InMemoryScoreStore.Create());
-            services.TryAddSingleton(provider => MovePicker.Create(
-                provider.GetRequiredService<AllowedMoveCatalog>(),
-                provider.GetRequiredService<MoveCatalog>(),
-                provider.GetRequiredService<IScoreStore>()));
-            return services;
-        }
-
-        /// <summary>
-        /// Adds a signal that shows a picked move worked, such as "offers.own_answer", and registers the
-        /// <see cref="OutcomeSignals"/> built from every success and failure signal.
-        /// The outcome signals are built once, when first resolved, so signals added after the service provider is built are never seen.
-        /// It also registers the <see cref="MoveJudge"/> that judges a picked move by the learner turns after it.
-        /// The signal must be added with AddSignal, the history with AddHistory and at least one move with AddMoveFor
-        /// before this call. An empty or unknown id, a missing AddHistory or AddMoveFor, a signal added twice as a
-        /// success signal, or a signal that is a failure signal too throws here so a wrong vocabulary stops the app at startup.
-        /// </summary>
-        public IServiceCollection AddSuccessSignal(string signalId)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(signalId);
-
-            var knownSignal = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(SignalRegistration)
-                && !descriptor.IsKeyedService
-                && descriptor.ImplementationInstance is SignalRegistration registration
-                && registration.Signal.Id == signalId);
-            if (!knownSignal)
-                throw new InvalidOperationException($"The signal \"{signalId}\" is not added. Add it with AddSignal before AddSuccessSignal.");
-
-            var historyAdded = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(HistoryReplayer) && !descriptor.IsKeyedService);
-            if (!historyAdded)
-                throw new InvalidOperationException($"The history is not added, so the signal \"{signalId}\" cannot judge a move. Add it with AddHistory before AddSuccessSignal.");
-
-            var movesAllowed = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(AllowedMoveRegistration) && !descriptor.IsKeyedService);
-            if (!movesAllowed)
-                throw new InvalidOperationException($"No moves are allowed, so the signal \"{signalId}\" has no move to judge. Allow them with AddMoveFor before AddSuccessSignal.");
-
-            var taken = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(SuccessSignalRegistration)
-                && !descriptor.IsKeyedService
-                && descriptor.ImplementationInstance is SuccessSignalRegistration registration
-                && registration.SignalId == signalId);
-            if (taken)
-                throw new InvalidOperationException($"The signal \"{signalId}\" is added twice as a success signal.");
-
-            var failure = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(FailureSignalRegistration)
-                && !descriptor.IsKeyedService
-                && descriptor.ImplementationInstance is FailureSignalRegistration registration
-                && registration.SignalId == signalId);
-            if (failure)
-                throw new InvalidOperationException($"The signal \"{signalId}\" is added as a failure signal too. A signal can show a move worked or failed, not both.");
-
-            services.AddSingleton(SuccessSignalRegistration.Create(signalId));
-            services.TryAddSingleton(provider => OutcomeSignals.Create(
-                [.. provider.GetServices<SuccessSignalRegistration>().Select(registration => registration.SignalId)],
-                [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
-            services.TryAddSingleton(provider => MoveJudge.Create(
-                provider.GetRequiredService<HistoryReplayer>(),
-                provider.GetRequiredService<OutcomeSignals>(),
-                provider.GetRequiredService<AllowedMoveCatalog>(),
-                provider.GetRequiredService<IHistoryStore>(),
-                provider.GetRequiredService<IScoreStore>()));
-            return services;
-        }
-
-        /// <summary>
-        /// Adds a signal that shows a picked move failed, such as "says.overwhelmed", and registers the
-        /// <see cref="OutcomeSignals"/> built from every success and failure signal.
-        /// The outcome signals are built once, when first resolved, so signals added after the service provider is built are never seen.
-        /// It also registers the <see cref="MoveJudge"/> that judges a picked move by the learner turns after it.
-        /// The signal must be added with AddSignal, the history with AddHistory and at least one move with AddMoveFor
-        /// before this call. An empty or unknown id, a missing AddHistory or AddMoveFor, a signal added twice as a
-        /// failure signal, or a signal that is a success signal too throws here so a wrong vocabulary stops the app at startup.
-        /// </summary>
-        public IServiceCollection AddFailureSignal(string signalId)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(signalId);
-
-            var knownSignal = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(SignalRegistration)
-                && !descriptor.IsKeyedService
-                && descriptor.ImplementationInstance is SignalRegistration registration
-                && registration.Signal.Id == signalId);
-            if (!knownSignal)
-                throw new InvalidOperationException($"The signal \"{signalId}\" is not added. Add it with AddSignal before AddFailureSignal.");
-
-            var historyAdded = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(HistoryReplayer) && !descriptor.IsKeyedService);
-            if (!historyAdded)
-                throw new InvalidOperationException($"The history is not added, so the signal \"{signalId}\" cannot judge a move. Add it with AddHistory before AddFailureSignal.");
-
-            var movesAllowed = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(AllowedMoveRegistration) && !descriptor.IsKeyedService);
-            if (!movesAllowed)
-                throw new InvalidOperationException($"No moves are allowed, so the signal \"{signalId}\" has no move to judge. Allow them with AddMoveFor before AddFailureSignal.");
-
-            var taken = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(FailureSignalRegistration)
-                && !descriptor.IsKeyedService
-                && descriptor.ImplementationInstance is FailureSignalRegistration registration
-                && registration.SignalId == signalId);
-            if (taken)
-                throw new InvalidOperationException($"The signal \"{signalId}\" is added twice as a failure signal.");
-
-            var success = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(SuccessSignalRegistration)
-                && !descriptor.IsKeyedService
-                && descriptor.ImplementationInstance is SuccessSignalRegistration registration
-                && registration.SignalId == signalId);
-            if (success)
-                throw new InvalidOperationException($"The signal \"{signalId}\" is added as a success signal too. A signal can show a move worked or failed, not both.");
-
-            services.AddSingleton(FailureSignalRegistration.Create(signalId));
-            services.TryAddSingleton(provider => OutcomeSignals.Create(
-                [.. provider.GetServices<SuccessSignalRegistration>().Select(registration => registration.SignalId)],
-                [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
-            services.TryAddSingleton(provider => MoveJudge.Create(
-                provider.GetRequiredService<HistoryReplayer>(),
-                provider.GetRequiredService<OutcomeSignals>(),
-                provider.GetRequiredService<AllowedMoveCatalog>(),
-                provider.GetRequiredService<IHistoryStore>(),
-                provider.GetRequiredService<IScoreStore>()));
+                [.. provider.GetServices<AllowedMoveRegistration>().Select(registration => registration.Allowed)]));
             return services;
         }
 
         /// <summary>
         /// Registers the <see cref="SessionEngine"/>, the one service the app or an MCP host calls to start a session,
         /// report each learner turn and read the belief. Call it last, after the vocabulary: the signals, states,
-        /// likelihoods, odds, history, moves allowed in each state, the success and failure signals and the learning.
-        /// It also registers the <see cref="VocabularyGuide"/> the AI reads, written once from the vocabulary when first
-        /// resolved, and the <see cref="Predictor"/> that says what is expected of the next turn.
+        /// likelihoods, odds, history, learning, the moves allowed in each state, the goal states and the move effects.
+        /// It also registers the <see cref="MoveChooser"/> that chooses a move in a clear state, the
+        /// <see cref="VocabularyGuide"/> the AI reads, written once from the vocabulary when first resolved, and the
+        /// <see cref="Predictor"/> that says what is expected of the next turn.
         /// It takes no options of its own, because the fade and clear margin are given to AddOdds, the rate weight to
-        /// AddLearning, and the stores are the ones registered by AddHistory, AddMoveFor and AddLearning.
-        /// No success or failure signal or no AddLearning before this call, or a second call, throws here so a wrong
-        /// setup stops the app at startup.
+        /// AddLearning, and the stores are the ones registered by AddHistory and AddLearning.
+        /// No AddHistory, no AddLearning, no move allowed with AddMoveFor or no goal state before this call, or a second
+        /// call, throws here so a wrong setup stops the app at startup.
         /// </summary>
         public IServiceCollection AddLearnEngine()
         {
@@ -582,18 +447,31 @@ public static class RegistrationExtension
             if (added)
                 throw new InvalidOperationException("The engine is added twice. Call AddLearnEngine once.");
 
-            // The judge is only registered once the history, an allowed move and an outcome signal are added, so its
-            // presence means the whole vocabulary came first.
-            var judgeAdded = services.Any(descriptor =>
-                descriptor.ServiceType == typeof(MoveJudge) && !descriptor.IsKeyedService);
-            if (!judgeAdded)
-                throw new InvalidOperationException("No success or failure signal is added, so no picked move can be judged. Add them with AddSuccessSignal or AddFailureSignal before AddLearnEngine.");
+            var historyAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(HistoryReplayer) && !descriptor.IsKeyedService);
+            if (!historyAdded)
+                throw new InvalidOperationException("The history is not added, so no session can be kept. Add it with AddHistory before AddLearnEngine.");
 
             var learningAdded = services.Any(descriptor =>
                 descriptor.ServiceType == typeof(LearningOptions) && !descriptor.IsKeyedService);
             if (!learningAdded)
                 throw new InvalidOperationException("The learning is not added, so the engine cannot learn how the learner learns. Add it with AddLearning before AddLearnEngine.");
 
+            var movesAllowed = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(AllowedMoveRegistration) && !descriptor.IsKeyedService);
+            if (!movesAllowed)
+                throw new InvalidOperationException("No moves are allowed, so the engine has no move to choose. Allow them with AddMoveFor before AddLearnEngine.");
+
+            var goalsAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(GoalStateRegistration) && !descriptor.IsKeyedService);
+            if (!goalsAdded)
+                throw new InvalidOperationException("No goal state is added, so no move can be chosen for where it leads. Add them with AddGoalState before AddLearnEngine.");
+
+            services.AddSingleton(provider => MoveChooser.Create(
+                provider.GetRequiredService<AllowedMoveCatalog>(),
+                provider.GetRequiredService<MoveCatalog>(),
+                provider.GetRequiredService<MoveEffectCatalog>(),
+                provider.GetRequiredService<GoalStates>()));
             services.AddSingleton(provider => SessionEngine.Create(
                 provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<OddsOptions>(),
@@ -603,8 +481,7 @@ public static class RegistrationExtension
                 provider.GetRequiredService<HistoryReplayer>(),
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<MoveCatalog>(),
-                provider.GetRequiredService<MoveJudge>(),
-                provider.GetRequiredService<MovePicker>(),
+                provider.GetRequiredService<MoveChooser>(),
                 provider.GetRequiredService<ILearnerModelStore>(),
                 provider.GetRequiredService<Predictor>()));
             services.AddSingleton(provider => Predictor.Create(

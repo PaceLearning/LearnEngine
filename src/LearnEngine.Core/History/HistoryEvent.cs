@@ -14,7 +14,6 @@ namespace LearnEngine.Core.History;
 [JsonDerivedType(typeof(TurnLearned), "turn_learned")]
 [JsonDerivedType(typeof(TurnExpected), "turn_expected")]
 [JsonDerivedType(typeof(MovePicked), "move_picked")]
-[JsonDerivedType(typeof(MoveJudged), "move_judged")]
 public abstract class HistoryEvent
 {
     // Private protected so every kind of event is one the engine knows how to replay and write.

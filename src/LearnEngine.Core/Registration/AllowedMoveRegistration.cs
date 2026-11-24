@@ -1,13 +1,13 @@
-using LearnEngine.Core.Bandit;
+using LearnEngine.Core.Choosing;
 
 namespace LearnEngine.Core.Registration;
 
-// A move allowed in a state, kept in the service collection with its starting score until the catalog is built from all of them.
+// A move allowed in a state, kept in the service collection until the catalog is built from all of them.
 internal sealed class AllowedMoveRegistration
 {
-    public MoveScore StartingScore { get; }
+    public AllowedMove Allowed { get; }
 
-    private AllowedMoveRegistration(MoveScore startingScore) => StartingScore = startingScore;
+    private AllowedMoveRegistration(AllowedMove allowed) => Allowed = allowed;
 
-    public static AllowedMoveRegistration Create(MoveScore startingScore) => new(startingScore);
+    public static AllowedMoveRegistration Create(AllowedMove allowed) => new(allowed);
 }

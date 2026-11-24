@@ -24,9 +24,8 @@ public sealed class HistoryReplayerTests
         var replayed = replayer.Replay([
             SessionStarted.Create(fingerprint, Fade, 0.15),
             LearnerTurn.Create([LeansFirst]),
-            MovePicked.Create(First, One),
-            LearnerTurn.Create([]),
-            MoveJudged.Create(First, One, true)]);
+            MovePicked.Create(First, One, 0.6, "Why one."),
+            LearnerTurn.Create([])]);
 
         var afterOne = engine.Apply(engine.Predict(engine.Start(), LearnerModel.Empty, null), LearnerModel.Empty, [LeansFirst]).AsT0;
         var afterTwo = engine.Apply(engine.Predict(afterOne, LearnerModel.Empty, null), LearnerModel.Empty, []).AsT0;
@@ -210,6 +209,23 @@ public sealed class HistoryReplayerTests
         Assert.True(replayed.IsT2);
         Assert.Equal(2, replayed.AsT2.EventIndex);
         Assert.Contains("not_a_move", replayed.AsT2.Reason);
+    }
+
+    [Theory]
+    [InlineData("not_a_state", One, 0.5)]
+    [InlineData(First, "not_a_move", 0.5)]
+    [InlineData(First, One, 1.5)]
+    [InlineData(First, One, double.NaN)]
+    public void Replay_PickOfAnUnknownStateOrMoveOrGoalChanceOutOfRange_GivesBrokenHistoryAtIt(string stateId, string moveId, double goalChance)
+    {
+        using var provider = Create();
+        var replayer = provider.GetRequiredService<HistoryReplayer>();
+        var start = SessionStarted.Create(provider.GetRequiredService<VocabularyFingerprint>().Value, Fade, 0.15);
+
+        var replayed = replayer.Replay([start, LearnerTurn.Create([LeansFirst]), MovePicked.Create(stateId, moveId, goalChance, "Why.")]);
+
+        Assert.True(replayed.IsT2);
+        Assert.Equal(2, replayed.AsT2.EventIndex);
     }
 
     [Theory]

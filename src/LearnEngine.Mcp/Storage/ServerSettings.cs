@@ -6,7 +6,7 @@ namespace LearnEngine.Mcp.Storage;
 public sealed class ServerSettings
 {
     /// <summary>
-    /// The folder every history, score and compliance file is kept under, such as /data in the Docker image.
+    /// The folder every history, learner model and compliance file is kept under, such as /data in the Docker image.
     /// </summary>
     public string DataFolder { get; }
 

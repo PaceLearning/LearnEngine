@@ -144,4 +144,28 @@ public sealed class LearnerModel
         var total = effectTotals.GetValueOrDefault((shared.FromStateId, shared.MoveId));
         return (shared.ChanceOf(toStateId) * shared.Weight + count) / (shared.Weight + total);
     }
+
+    /// <summary>
+    /// The learner's soft count of turns that went from the given state to the given state after the given move, or
+    /// after no move when it is null. It is 0 when there are none.
+    /// </summary>
+    public double Steps(string fromStateId, string? moveId, string toStateId)
+    {
+        ArgumentNullException.ThrowIfNull(fromStateId);
+        ArgumentNullException.ThrowIfNull(toStateId);
+
+        return effects.GetValueOrDefault((fromStateId, moveId, toStateId));
+    }
+
+    /// <summary>
+    /// The learner's soft count of turns that came after the given move made in the given state, or after no move when
+    /// it is null, whatever state they went to: how much evidence of their own the learner has of that move there.
+    /// It is 0 when there are none.
+    /// </summary>
+    public double Steps(string fromStateId, string? moveId)
+    {
+        ArgumentNullException.ThrowIfNull(fromStateId);
+
+        return effectTotals.GetValueOrDefault((fromStateId, moveId));
+    }
 }

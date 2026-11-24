@@ -1,4 +1,4 @@
-using LearnEngine.Core.Bandit;
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Registration;
@@ -22,7 +22,7 @@ public sealed class TeachingVocabularyTests
 
         var allowed = provider.GetRequiredService<AllowedMoveCatalog>().All;
 
-        Assert.All(allowed, score => Assert.Contains(effects.All, effect => effect.FromStateId == score.StateId && effect.MoveId == score.MoveId));
+        Assert.All(allowed, move => Assert.Contains(effects.All, effect => effect.FromStateId == move.StateId && effect.MoveId == move.MoveId));
         Assert.Equal(allowed.Length, effects.All.Length);
         Assert.Equal(["following", "eager"], provider.GetRequiredService<GoalStates>().StateIds.AsEnumerable());
     }

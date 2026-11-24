@@ -104,13 +104,15 @@ public sealed class RegistrationTests
     }
 
     [Fact]
-    public void AddMoveFor_UnknownStateOrMove_Throws()
+    public void AddMoveFor_UnknownStateOrMoveOrTwice_Throws()
     {
         var services = SignalsAndStates();
         services.AddMove("m", "Move m.");
 
-        Assert.Throws<InvalidOperationException>(() => services.AddMoveFor("z", "m", 1, 2));
-        Assert.Throws<InvalidOperationException>(() => services.AddMoveFor("x", "n", 1, 2));
+        Assert.Throws<InvalidOperationException>(() => services.AddMoveFor("z", "m"));
+        Assert.Throws<InvalidOperationException>(() => services.AddMoveFor("x", "n"));
+        services.AddMoveFor("x", "m");
+        Assert.Throws<InvalidOperationException>(() => services.AddMoveFor("x", "m"));
     }
 
     [Fact]
@@ -167,7 +169,7 @@ public sealed class RegistrationTests
     {
         using var plain = Create();
         using var withEffect = Create(after: services => services.AddMoveEffect(First, One, weight: 10, (Second, 1)));
-        using var withGoal = Create(after: services => services.AddGoalState(First));
+        using var withGoal = Create(after: services => services.AddGoalState(Second));
 
         var fingerprint = plain.GetRequiredService<VocabularyFingerprint>().Value;
 
@@ -176,27 +178,27 @@ public sealed class RegistrationTests
     }
 
     [Fact]
-    public void AddSuccessSignal_AlsoAFailureSignal_Throws()
+    public void AddLearnEngine_NoGoalState_Throws()
     {
         var services = new ServiceCollection();
         services.AddSignal("a", "Signal a.");
         services.AddStates(states => states.AddState("x", "State x.", 1));
         services.AddLikelihoods(rates => rates.AddRates("a", ("x", 0.5)));
-        services.AddOdds().AddHistory();
-        services.AddMove("m", "Move m.").AddMoveFor("x", "m", 1, 2);
-        services.AddFailureSignal("a");
+        services.AddOdds().AddHistory().AddLearning();
+        services.AddMove("m", "Move m.").AddMoveFor("x", "m");
 
-        Assert.Throws<InvalidOperationException>(() => services.AddSuccessSignal("a"));
+        Assert.Throws<InvalidOperationException>(() => services.AddLearnEngine());
     }
 
     [Fact]
-    public void AddLearnEngine_NoOutcomeSignals_Throws()
+    public void AddLearnEngine_NoMoveAllowed_Throws()
     {
         var services = new ServiceCollection();
         services.AddSignal("a", "Signal a.");
         services.AddStates(states => states.AddState("x", "State x.", 1));
         services.AddLikelihoods(rates => rates.AddRates("a", ("x", 0.5)));
-        services.AddOdds().AddHistory();
+        services.AddOdds().AddHistory().AddLearning();
+        services.AddMove("m", "Move m.").AddGoalState("x");
 
         Assert.Throws<InvalidOperationException>(() => services.AddLearnEngine());
     }
@@ -205,14 +207,24 @@ public sealed class RegistrationTests
     public void AddLearnEngine_NoLearning_Throws()
     {
         var services = new ServiceCollection();
-        services.AddSignal("a", "Signal a.").AddSignal("b", "Signal b.");
+        services.AddSignal("a", "Signal a.");
         services.AddStates(states => states.AddState("x", "State x.", 1));
-        services.AddLikelihoods(rates => rates.AddRates("a", ("x", 0.5)).AddRates("b", ("x", 0.5)));
+        services.AddLikelihoods(rates => rates.AddRates("a", ("x", 0.5)));
         services.AddOdds().AddHistory();
-        services.AddMove("m", "Move m.").AddMoveFor("x", "m", 1, 2);
-        services.AddSuccessSignal("a").AddFailureSignal("b");
+        services.AddMove("m", "Move m.").AddMoveFor("x", "m").AddGoalState("x");
 
         Assert.Throws<InvalidOperationException>(() => services.AddLearnEngine());
+    }
+
+    [Fact]
+    public void VocabularyFingerprint_AnAllowedMove_ChangesIt()
+    {
+        using var withMove = Create(after: services => services.AddMove("three", "The third move."));
+        using var withAllowed = Create(after: services => services.AddMove("three", "The third move.").AddMoveFor(Second, "three"));
+
+        Assert.NotEqual(
+            withMove.GetRequiredService<VocabularyFingerprint>().Value,
+            withAllowed.GetRequiredService<VocabularyFingerprint>().Value);
     }
 
     [Theory]

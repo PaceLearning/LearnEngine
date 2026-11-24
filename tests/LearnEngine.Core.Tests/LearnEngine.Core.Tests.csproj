@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LearnEngine.Core\LearnEngine.Core.csproj" />
+    <ProjectReference Include="..\..\src\LearnEngine.Teaching\LearnEngine.Teaching.csproj" />
   </ItemGroup>
 
 </Project>

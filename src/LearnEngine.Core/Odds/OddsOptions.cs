@@ -17,7 +17,8 @@ public sealed record OddsOptions
     public const double DefaultClearMargin = 0.15;
 
     /// <summary>
-    /// How far the belief moves back to the priors before every learner turn, from 0 to 1.
+    /// How far the belief moves back to the priors before a learner turn when no move was made, from 0 to 1.
+    /// It is the effect of no move: see <see cref="Effects.MoveEffectCatalog"/>.
     /// </summary>
     public double Fade { get; }
 

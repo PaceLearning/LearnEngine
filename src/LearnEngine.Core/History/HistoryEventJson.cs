@@ -50,7 +50,7 @@ public static class HistoryEventJson
             return UnreadableEvent.Create(line, "The turn has a signal id that is null.");
 
         var nullInLearned = historyEvent is TurnLearned learned
-            && (learned.Odds.Any(stateOdds => stateOdds is null) || learned.Added.Rates.Any(count => count is null));
+            && (learned.Odds.Any(stateOdds => stateOdds is null) || learned.Added.Rates.Any(count => count is null) || learned.Added.Effects.Any(count => count is null));
         if (nullInLearned)
             return UnreadableEvent.Create(line, "What the turn learned has a value that is null.");
 

@@ -16,12 +16,12 @@ public static class RegistrationExtension
         /// Adds the whole teaching vocabulary in the order the engine asks for: the signals, the states with their
         /// priors, the rate of every signal in every state, the odds with the default fade and clear margin, the
         /// history, the learning with the default rate weight, the moves allowed in each state with their starting
-        /// counts, and the success and failure signals.
-        /// The rates and the starting counts are guesses, written before any session was recorded, and should be
-        /// replaced by numbers measured from real histories.
+        /// counts, the goal states, where each allowed move leads, and the success and failure signals.
+        /// The rates, the starting counts and the move effects are guesses, written before any session was recorded,
+        /// and should be replaced by numbers measured from real histories.
         /// Register the history, score and learner model stores before this call so they are kept instead of the in-memory ones.
-        /// Changing any id, description, prior, rate or outcome signal changes the vocabulary fingerprint, so sessions
-        /// started before the change can no longer be continued.
+        /// Changing any id, description, prior, rate, goal state, move effect or outcome signal changes the vocabulary
+        /// fingerprint, so sessions started before the change can no longer be continued.
         /// </summary>
         public IServiceCollection AddTeachingVocabulary()
         {
@@ -100,6 +100,45 @@ public static class RegistrationExtension
                 .AddMoveFor("overloaded", "keep_going", 2, 10)
                 .AddMoveFor("eager", "let_them_try", 8, 10)
                 .AddMoveFor("eager", "keep_going", 5, 10);
+
+            // The states the engine wants to bring every student to.
+            services
+                .AddGoalState("following")
+                .AddGoalState("eager");
+
+            // Where each allowed move leads from its state by the student's next message. They are guesses too, written
+            // before any session was recorded: the chance of reaching following or eager is about the starting share
+            // worked out of tried above, and the rest is spread over the other states. Each counts as 10 messages
+            // before a student's own counts move it.
+            services
+                .AddMoveEffect("following", "keep_going", weight: 10,
+                    ("following", 0.55), ("eager", 0.15), ("stuck", 0.15), ("overloaded", 0.10), ("model_clash", 0.05))
+                .AddMoveEffect("following", "let_them_try", weight: 10,
+                    ("following", 0.35), ("eager", 0.25), ("stuck", 0.25), ("overloaded", 0.05), ("model_clash", 0.10))
+                .AddMoveEffect("following", "worked_example", weight: 10,
+                    ("following", 0.30), ("eager", 0.10), ("stuck", 0.20), ("overloaded", 0.30), ("model_clash", 0.10))
+                .AddMoveEffect("model_clash", "ask_their_picture", weight: 10,
+                    ("following", 0.55), ("eager", 0.15), ("stuck", 0.05), ("overloaded", 0.05), ("model_clash", 0.20))
+                .AddMoveEffect("model_clash", "worked_example", weight: 10,
+                    ("following", 0.40), ("eager", 0.10), ("stuck", 0.15), ("overloaded", 0.05), ("model_clash", 0.30))
+                .AddMoveEffect("model_clash", "explain_again", weight: 10,
+                    ("following", 0.25), ("eager", 0.05), ("stuck", 0.10), ("overloaded", 0.10), ("model_clash", 0.50))
+                .AddMoveEffect("stuck", "worked_example", weight: 10,
+                    ("following", 0.55), ("eager", 0.15), ("stuck", 0.20), ("overloaded", 0.05), ("model_clash", 0.05))
+                .AddMoveEffect("stuck", "diagram", weight: 10,
+                    ("following", 0.50), ("eager", 0.10), ("stuck", 0.25), ("overloaded", 0.05), ("model_clash", 0.10))
+                .AddMoveEffect("stuck", "explain_again", weight: 10,
+                    ("following", 0.35), ("eager", 0.05), ("stuck", 0.40), ("overloaded", 0.15), ("model_clash", 0.05))
+                .AddMoveEffect("overloaded", "slow_down", weight: 10,
+                    ("following", 0.60), ("eager", 0.10), ("stuck", 0.10), ("overloaded", 0.15), ("model_clash", 0.05))
+                .AddMoveEffect("overloaded", "worked_example", weight: 10,
+                    ("following", 0.25), ("eager", 0.05), ("stuck", 0.25), ("overloaded", 0.40), ("model_clash", 0.05))
+                .AddMoveEffect("overloaded", "keep_going", weight: 10,
+                    ("following", 0.15), ("eager", 0.05), ("stuck", 0.15), ("overloaded", 0.60), ("model_clash", 0.05))
+                .AddMoveEffect("eager", "let_them_try", weight: 10,
+                    ("following", 0.35), ("eager", 0.45), ("stuck", 0.10), ("overloaded", 0.05), ("model_clash", 0.05))
+                .AddMoveEffect("eager", "keep_going", weight: 10,
+                    ("following", 0.35), ("eager", 0.15), ("stuck", 0.15), ("overloaded", 0.25), ("model_clash", 0.10));
 
             return services
                 .AddSuccessSignal("offers.own_answer")

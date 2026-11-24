@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
@@ -13,7 +14,7 @@ public sealed class HistoryReplayerTests
     private const double Fade = 0.15;
 
     [Fact]
-    public void Replay_Turns_FadesBeforeEachTurnAndSkipsOtherEvents()
+    public void Replay_Turns_PredictsBeforeEachTurnAndSkipsOtherEvents()
     {
         using var provider = Create();
         var replayer = provider.GetRequiredService<HistoryReplayer>();
@@ -27,8 +28,8 @@ public sealed class HistoryReplayerTests
             LearnerTurn.Create([]),
             MoveJudged.Create(First, One, true)]);
 
-        var afterOne = engine.Apply(engine.Fade(engine.Start(), Fade), LearnerModel.Empty, [LeansFirst]).AsT0;
-        var afterTwo = engine.Apply(engine.Fade(afterOne, Fade), LearnerModel.Empty, []).AsT0;
+        var afterOne = engine.Apply(engine.Predict(engine.Start(), LearnerModel.Empty, null), LearnerModel.Empty, [LeansFirst]).AsT0;
+        var afterTwo = engine.Apply(engine.Predict(afterOne, LearnerModel.Empty, null), LearnerModel.Empty, []).AsT0;
         Assert.True(replayed.IsT0);
         Assert.Equal(afterTwo.All[0].Odds, replayed.AsT0.All[0].Odds, 10);
         Assert.Equal(afterTwo.All[1].Odds, replayed.AsT0.All[1].Odds, 10);
@@ -107,7 +108,7 @@ public sealed class HistoryReplayerTests
         var replayed = replayer.Replay([
             start,
             LearnerTurn.Create([LeansFirst]),
-            TurnLearned.Create([StateOdds.Create(First, 0.3), StateOdds.Create(Second, 0.7)], LearnerModelChange.Create([]))]);
+            TurnLearned.Create([StateOdds.Create(First, 0.3), StateOdds.Create(Second, 0.7)], LearnerModelChange.Create([], []))]);
 
         Assert.Equal(0.3, replayed.AsT0.All[0].Odds, 10);
         Assert.Equal(Second, replayed.AsT0.Leader.StateId);
@@ -122,7 +123,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([
             start,
-            TurnLearned.Create([StateOdds.Create(First, 0.3), StateOdds.Create(Second, 0.7)], LearnerModelChange.Create([]))]);
+            TurnLearned.Create([StateOdds.Create(First, 0.3), StateOdds.Create(Second, 0.7)], LearnerModelChange.Create([], []))]);
 
         Assert.True(replayed.IsT2);
         Assert.Equal(1, replayed.AsT2.EventIndex);
@@ -141,7 +142,7 @@ public sealed class HistoryReplayerTests
         var replayed = replayer.Replay([
             start,
             LearnerTurn.Create([]),
-            TurnLearned.Create([StateOdds.Create(First, first), StateOdds.Create(Second, second)], LearnerModelChange.Create([]))]);
+            TurnLearned.Create([StateOdds.Create(First, first), StateOdds.Create(Second, second)], LearnerModelChange.Create([], []))]);
 
         Assert.True(replayed.IsT2);
         Assert.Equal(2, replayed.AsT2.EventIndex);
@@ -157,17 +158,44 @@ public sealed class HistoryReplayerTests
         var outOfOrder = replayer.Replay([
             start,
             LearnerTurn.Create([]),
-            TurnLearned.Create([StateOdds.Create(Second, 0.5), StateOdds.Create(First, 0.5)], LearnerModelChange.Create([]))]);
+            TurnLearned.Create([StateOdds.Create(Second, 0.5), StateOdds.Create(First, 0.5)], LearnerModelChange.Create([], []))]);
         var unknownSignal = replayer.Replay([
             start,
             LearnerTurn.Create([]),
             TurnLearned.Create(
                 [StateOdds.Create(First, 0.5), StateOdds.Create(Second, 0.5)],
-                LearnerModelChange.Create([RateCount.Create("not.a.signal", First, 0.5, 0)]))]);
+                LearnerModelChange.Create([RateCount.Create("not.a.signal", First, 0.5, 0)], []))]);
 
         Assert.True(outOfOrder.IsT2);
         Assert.True(unknownSignal.IsT2);
         Assert.Contains("not.a.signal", unknownSignal.AsT2.Reason);
+    }
+
+    [Fact]
+    public void Replay_TurnLearnedWithAStepOfAnUnknownStateOrMove_GivesBrokenHistory()
+    {
+        using var provider = Create();
+        var replayer = provider.GetRequiredService<HistoryReplayer>();
+        var start = SessionStarted.Create(provider.GetRequiredService<VocabularyFingerprint>().Value, Fade, 0.15);
+        ImmutableArray<StateOdds> odds = [StateOdds.Create(First, 0.5), StateOdds.Create(Second, 0.5)];
+
+        var unknownState = replayer.Replay([
+            start,
+            LearnerTurn.Create([]),
+            TurnLearned.Create(odds, LearnerModelChange.Create([], [EffectCount.Create(First, null, "not_a_state", 0.5)]))]);
+        var unknownMove = replayer.Replay([
+            start,
+            LearnerTurn.Create([]),
+            TurnLearned.Create(odds, LearnerModelChange.Create([], [EffectCount.Create(First, "not_a_move", Second, 0.5)]))]);
+        var known = replayer.Replay([
+            start,
+            LearnerTurn.Create([], null, One),
+            TurnLearned.Create(odds, LearnerModelChange.Create([], [EffectCount.Create(First, One, Second, 0.5)]))]);
+
+        Assert.Equal(2, unknownState.AsT2.EventIndex);
+        Assert.Contains("not_a_state", unknownState.AsT2.Reason);
+        Assert.Contains("not_a_move", unknownMove.AsT2.Reason);
+        Assert.True(known.IsT0);
     }
 
     [Fact]

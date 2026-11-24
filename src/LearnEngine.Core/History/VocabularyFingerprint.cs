@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using LearnEngine.Core.Effects;
 using LearnEngine.Core.Judging;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
@@ -11,7 +12,8 @@ namespace LearnEngine.Core.History;
 
 /// <summary>
 /// A short hash of the whole vocabulary the app registered: every signal, state, prior, rate and move, with their descriptions,
-/// which signals show a move worked or failed, all in the order they were registered, and the rate weight of the learning.
+/// which signals show a move worked or failed, where each move leads, which states are goals, all in the order they
+/// were registered, the fade and the rate weight of the learning.
 /// Every session is stamped with it, so a history is never replayed under another vocabulary.
 /// </summary>
 public sealed class VocabularyFingerprint
@@ -30,6 +32,8 @@ public sealed class VocabularyFingerprint
         LikelihoodTable likelihoods,
         MoveCatalog? moves,
         OutcomeSignals? outcomes,
+        MoveEffectCatalog effects,
+        GoalStates? goals,
         double rateWeight)
     {
         // Written as JSON so ids and descriptions are escaped and numbers are written the same way in every culture,
@@ -97,6 +101,32 @@ public sealed class VocabularyFingerprint
             // Learning changes what a session keeps after each turn, so a session kept before it, or under another
             // weight, is never continued with it.
             writer.WriteNumber("rate_weight", rateWeight);
+
+            // The fade is the effect of no move, so it moves the odds as much as any registered effect does.
+            writer.WriteNumber("fade", effects.Fade);
+
+            writer.WriteStartArray("move_effects");
+            foreach (var effect in effects.All)
+            {
+                writer.WriteStartArray();
+                writer.WriteStringValue(effect.FromStateId);
+                writer.WriteStringValue(effect.MoveId);
+                writer.WriteNumberValue(effect.Weight);
+                foreach (var chance in effect.Chances)
+                {
+                    writer.WriteStartArray();
+                    writer.WriteStringValue(chance.StateId);
+                    writer.WriteNumberValue(chance.Odds);
+                    writer.WriteEndArray();
+                }
+                writer.WriteEndArray();
+            }
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("goal_states");
+            foreach (var stateId in goals?.StateIds ?? [])
+                writer.WriteStringValue(stateId);
+            writer.WriteEndArray();
 
             writer.WriteEndObject();
         }

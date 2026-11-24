@@ -54,7 +54,18 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
         if (badCount)
             throw new InvalidDataException($"{path} has a count that is null, has an empty id or is not 0 or more.");
 
-        return LearnerModel.Create(saved.Rates.Select(count => RateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)));
+        var badStep = saved.Effects.Any(count =>
+            count is null
+            || string.IsNullOrWhiteSpace(count.FromStateId)
+            || string.IsNullOrWhiteSpace(count.ToStateId)
+            || (count.MoveId is not null && string.IsNullOrWhiteSpace(count.MoveId))
+            || !(count.Count >= 0 && double.IsFinite(count.Count)));
+        if (badStep)
+            throw new InvalidDataException($"{path} has a step count that is null, has an empty id or is not 0 or more.");
+
+        return LearnerModel.Create(
+            saved.Rates.Select(count => RateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)),
+            saved.Effects.Select(count => EffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)));
     }
 
     /// <inheritdoc/>
@@ -69,8 +80,9 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
         try
         {
             var model = (await Load(learnerId, cancellationToken)).Add(change);
-            var saved = SavedLearnerModel.Create(model.Rates.Select(count =>
-                SavedRateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)));
+            var saved = SavedLearnerModel.Create(
+                model.Rates.Select(count => SavedRateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)),
+                model.Effects.Select(count => SavedEffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)));
             var json = JsonSerializer.Serialize(saved, StorageJsonContext.Default.SavedLearnerModel);
 
             var path = Path.Combine(folder, learnerId + ".json");

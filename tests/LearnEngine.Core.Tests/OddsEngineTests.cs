@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Registration;
@@ -7,7 +8,7 @@ using static LearnEngine.Core.Tests.TestVocabulary;
 
 namespace LearnEngine.Core.Tests;
 
-/// <summary>The odds from the priors, after a turn and after a fade, and the clear leader.</summary>
+/// <summary>The odds from the priors, after a turn and as predicted from a move or no move, and the clear leader.</summary>
 public sealed class OddsEngineTests
 {
     private const int Precision = 10;
@@ -52,7 +53,7 @@ public sealed class OddsEngineTests
         var engine = provider.GetRequiredService<OddsEngine>();
 
         // 20 turns in the first state that did not show leans.first, on top of its shared 0.5 counted as 20 turns.
-        var model = LearnerModel.Create([RateCount.Create(LeansFirst, First, 0, 20)]);
+        var model = LearnerModel.Create([RateCount.Create(LeansFirst, First, 0, 20)], []);
         var learnerRate = (0.5 * LearningOptions.DefaultRateWeight + 0) / (LearningOptions.DefaultRateWeight + 0 + 20);
 
         var applied = engine.Apply(engine.Start(), model, [LeansFirst]);
@@ -101,53 +102,62 @@ public sealed class OddsEngineTests
     }
 
     [Fact]
-    public void Fade_Zero_KeepsTheBelief()
+    public void Predict_NoMoveOverSeveralTurns_GivesTheOddsOfTodaysFade()
     {
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
-        var belief = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
+        const double fade = OddsOptions.DefaultFade;
+        ImmutableArray<ImmutableArray<string>> turns = [[LeansFirst], [LeansSecond], [], [LeansFirst, WentWell], [LeansSecond]];
 
-        var faded = engine.Fade(belief, 0);
+        var predicted = engine.Start();
+        var today = FirstPrior;
+        foreach (var turn in turns)
+        {
+            predicted = engine.Apply(engine.Predict(predicted, LearnerModel.Empty, null), LearnerModel.Empty, turn).AsT0;
 
-        Assert.Equal(belief.All[0].Odds, faded.All[0].Odds, Precision);
-        Assert.Equal(belief.All[1].Odds, faded.All[1].Odds, Precision);
+            // The fade the engine did before every turn until now, then the turn's rates, worked out by hand. The two
+            // outcome signals have the same rate in both states, so they cancel out.
+            var fadedFirst = (1 - fade) * today + fade * FirstPrior;
+            var first = fadedFirst * 0.5 * (turn.Contains(LeansSecond) ? 0.2 : 0.8);
+            var second = (1 - fadedFirst) * (turn.Contains(LeansFirst) ? 0.1 : 0.9) * (turn.Contains(LeansSecond) ? 0.4 : 0.6);
+            today = first / (first + second);
+
+            Assert.Equal(today, predicted.All[0].Odds, Precision);
+            Assert.Equal(1 - today, predicted.All[1].Odds, Precision);
+        }
     }
 
     [Fact]
-    public void Fade_One_GivesThePriors()
+    public void Predict_MoveWithAnEffect_LeadsWhereTheEffectSays()
     {
-        using var provider = Create();
+        using var provider = Create(after: services => services
+            .AddMoveEffect(First, One, weight: 10, (First, 0.2), (Second, 0.8)));
         var engine = provider.GetRequiredService<OddsEngine>();
-        var belief = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
 
-        var faded = engine.Fade(belief, 1);
+        var predicted = engine.Predict(engine.Start(), LearnerModel.Empty, One);
 
-        Assert.Equal(FirstPrior, faded.All[0].Odds, Precision);
-        Assert.Equal(SecondPrior, faded.All[1].Odds, Precision);
+        // From the first state the move leads to the second with 0.8. From the second it has no effect, so it fades.
+        const double fade = OddsOptions.DefaultFade;
+        var second = FirstPrior * 0.8 + SecondPrior * ((1 - fade) + fade * SecondPrior);
+        Assert.Equal(second, predicted.All[1].Odds, Precision);
+        Assert.Equal(1, predicted.All.Sum(stateOdds => stateOdds.Odds), Precision);
     }
 
     [Fact]
-    public void Fade_PartWay_MovesEachStateTowardItsPrior()
+    public void Predict_LearnerCounts_UsesTheLearnersEffect()
     {
-        using var provider = Create();
+        using var provider = Create(after: services => services
+            .AddMoveEffect(First, One, weight: 10, (First, 0.2), (Second, 0.8)));
         var engine = provider.GetRequiredService<OddsEngine>();
-        var belief = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
+        var certain = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
 
-        var faded = engine.Fade(belief, 0.25);
+        // 10 steps from the first state that stayed there, on top of the shared 0.2 counted as 10.
+        var model = LearnerModel.Create([], [EffectCount.Create(First, One, First, 10)]);
+        var learnt = engine.Predict(certain, model, One);
+        var shared = engine.Predict(certain, LearnerModel.Empty, One);
 
-        Assert.Equal(0.75 * belief.All[0].Odds + 0.25 * FirstPrior, faded.All[0].Odds, Precision);
-    }
-
-    [Theory]
-    [InlineData(-0.01)]
-    [InlineData(1.01)]
-    [InlineData(double.NaN)]
-    public void Fade_OutOfRange_Throws(double fade)
-    {
-        using var provider = Create();
-        var engine = provider.GetRequiredService<OddsEngine>();
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Fade(engine.Start(), fade));
+        Assert.True(learnt.All[0].Odds > shared.All[0].Odds);
+        Assert.Equal(1, learnt.All.Sum(stateOdds => stateOdds.Odds), Precision);
     }
 
     [Fact]

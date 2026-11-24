@@ -5,7 +5,7 @@ namespace LearnEngine.Core.Odds;
 
 /// <summary>
 /// What the odds engine believes about a learner after a number of turns: the odds of every state, adding up to 1.
-/// A belief never changes. Fading it or applying a turn to it gives a new one.
+/// A belief never changes. Predicting from it or applying a turn to it gives a new one.
 /// </summary>
 public sealed class Belief
 {

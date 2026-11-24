@@ -28,11 +28,13 @@ internal static class TestVocabulary
     /// Registers the vocabulary and the engine. Anything registered by <paramref name="before"/> comes first, such as a
     /// store kept across two vocabularies. With <paramref name="otherDescription"/> the first signal reads differently,
     /// which gives the same vocabulary another fingerprint, and so does another <paramref name="rateWeight"/>.
+    /// Anything registered by <paramref name="after"/> comes last, such as a move effect.
     /// </summary>
     public static ServiceProvider Create(
         Action<IServiceCollection>? before = null,
         string otherDescription = "",
-        double rateWeight = LearningOptions.DefaultRateWeight)
+        double rateWeight = LearningOptions.DefaultRateWeight,
+        Action<IServiceCollection>? after = null)
     {
         var services = new ServiceCollection();
         before?.Invoke(services);
@@ -72,6 +74,7 @@ internal static class TestVocabulary
             .AddFailureSignal(WentBadly)
             .AddLearnEngine();
 
+        after?.Invoke(services);
         return services.BuildServiceProvider();
     }
 }

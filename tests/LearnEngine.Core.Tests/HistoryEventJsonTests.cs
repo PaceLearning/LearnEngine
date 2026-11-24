@@ -91,16 +91,30 @@ public sealed class HistoryEventJsonTests
     {
         var learned = TurnLearned.Create(
             [StateOdds.Create("stuck", 0.75), StateOdds.Create("following", 0.25)],
-            LearnerModelChange.Create([RateCount.Create("asks.for_help", "stuck", 0.75, 0)]));
+            LearnerModelChange.Create(
+                [RateCount.Create("asks.for_help", "stuck", 0.75, 0)],
+                [EffectCount.Create("stuck", "worked_example", "following", 0.5), EffectCount.Create("stuck", null, "stuck", 0.25)]));
 
         var line = HistoryEventJson.Write(learned);
         var read = HistoryEventJson.Read(line);
 
-        Assert.Equal("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":0.75},{"state_id":"following","odds":0.25}],"added":{"rates":[{"signal_id":"asks.for_help","state_id":"stuck","shown":0.75,"not_shown":0}]}}""", line);
+        Assert.Equal("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":0.75},{"state_id":"following","odds":0.25}],"added":{"rates":[{"signal_id":"asks.for_help","state_id":"stuck","shown":0.75,"not_shown":0}],"effects":[{"from_state_id":"stuck","move_id":"worked_example","to_state_id":"following","count":0.5},{"from_state_id":"stuck","move_id":null,"to_state_id":"stuck","count":0.25}]}}""", line);
         var readBack = Assert.IsType<TurnLearned>(read.AsT0);
         Assert.Equal(["stuck", "following"], readBack.Odds.Select(stateOdds => stateOdds.StateId));
         Assert.Equal(0.75, readBack.Odds[0].Odds);
         Assert.Equal(RateCount.Create("asks.for_help", "stuck", 0.75, 0), Assert.Single(readBack.Added.Rates));
+        Assert.Equal(
+            [EffectCount.Create("stuck", "worked_example", "following", 0.5), EffectCount.Create("stuck", null, "stuck", 0.25)],
+            readBack.Added.Effects.AsEnumerable());
+    }
+
+    [Fact]
+    public void Read_TurnLearnedWithoutEffects_GivesNone()
+    {
+        var read = HistoryEventJson.Read("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":1}],"added":{"rates":[]}}""");
+
+        var learned = Assert.IsType<TurnLearned>(read.AsT0);
+        Assert.Empty(learned.Added.Effects);
     }
 
     [Fact]

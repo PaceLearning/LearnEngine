@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using LearnEngine.Core.Bandit;
+using LearnEngine.Core.Effects;
 using LearnEngine.Core.Guide;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Judging;
@@ -151,8 +152,8 @@ public static class RegistrationExtension
         }
 
         /// <summary>
-        /// Registers the <see cref="OddsEngine"/> and the <see cref="OddsOptions"/> it is used with.
-        /// The fade is how far the belief moves back to the priors before every turn, and the clear margin is how far
+        /// Registers the <see cref="OddsEngine"/>, the <see cref="OddsOptions"/> it is used with and the <see cref="MoveEffectCatalog"/>.
+        /// The fade is how far the belief moves back to the priors before a turn when no move was made, and the clear margin is how far
         /// the leading state must be ahead of the runner up to be clear. Both must be from 0 to 1.
         /// The likelihoods must be added before this call. A value out of range, a missing AddLikelihoods,
         /// or a second call throws here so a wrong setup stops the app at startup.
@@ -181,18 +182,142 @@ public static class RegistrationExtension
                 throw new ArgumentOutOfRangeException(nameof(clearMargin), clearMargin, "The clear margin must be from 0 to 1.");
 
             services.AddSingleton(OddsOptions.Create(fade, clearMargin));
-            // The rate weight is read when the engine is first resolved, so AddLearning may come after this call.
+            // The effects and the rate weight are read when first resolved, so AddMoveEffect and AddLearning may come after this call.
+            services.AddSingleton(provider => MoveEffectCatalog.Create(
+                provider.GetRequiredService<StateCatalog>(),
+                fade,
+                [.. provider.GetServices<MoveEffectRegistration>().Select(registration => registration.Effect)]));
             services.AddSingleton(provider => OddsEngine.Create(
                 provider.GetRequiredService<StateCatalog>(),
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<LikelihoodTable>(),
+                provider.GetRequiredService<MoveEffectCatalog>(),
                 provider.GetService<LearningOptions>()?.RateWeight ?? LearningOptions.DefaultRateWeight));
             return services;
         }
 
         /// <summary>
+        /// Makes a state a goal state, one the engine wants to bring the learner to, such as "following", and registers
+        /// the <see cref="GoalStates"/> built from every goal state. They are built once, when first resolved, so goal
+        /// states added after the service provider is built are never seen.
+        /// The state must be added with AddStates before this call. An empty or unknown id, or a state added twice as a
+        /// goal state, throws here so a wrong vocabulary stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddGoalState(string stateId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
+
+            var states = services
+                .Where(descriptor => descriptor.ServiceType == typeof(StateCatalog) && !descriptor.IsKeyedService)
+                .Select(descriptor => descriptor.ImplementationInstance as StateCatalog)
+                .FirstOrDefault(catalog => catalog is not null);
+            if (states is null)
+                throw new InvalidOperationException($"The states are not added, so \"{stateId}\" cannot be a goal state. Add them with AddStates before AddGoalState.");
+
+            var knownState = states.Find(stateId).IsT0;
+            if (!knownState)
+                throw new InvalidOperationException($"The state \"{stateId}\" is not added. Add it with AddStates before AddGoalState.");
+
+            var taken = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(GoalStateRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is GoalStateRegistration registration
+                && registration.StateId == stateId);
+            if (taken)
+                throw new InvalidOperationException($"The state \"{stateId}\" is added twice as a goal state.");
+
+            services.AddSingleton(GoalStateRegistration.Create(stateId));
+            services.TryAddSingleton(provider => GoalStates.Create(
+                provider.GetServices<GoalStateRegistration>().Select(registration => registration.StateId)));
+            return services;
+        }
+
+        /// <summary>
+        /// Adds where a move made in a state leads by the next learner turn, shared by every learner: the chance of each
+        /// state after it, written as a state id and the chance, such as ("following", 0.55). A state not given has a
+        /// chance of 0, and the chances must add up to 1. The weight is how many turns of evidence the chances count as
+        /// before a learner's own counts move them, so a higher weight makes them move more slowly.
+        /// A move made in a state with no effect added is read as no move there, which fades back to the priors with
+        /// the fade given to AddOdds, with a weight of <see cref="MoveEffectCatalog.NoMoveWeight"/>.
+        /// The effects are read when the <see cref="MoveEffectCatalog"/> is first resolved, so effects added after the
+        /// service provider is built are never seen.
+        /// The state must be added with AddStates and the move with AddMove before this call. An empty or unknown id,
+        /// an effect added twice for the same state and move, a weight not above 0 and finite, a state given twice, a
+        /// chance outside 0 to 1, or chances that do not add up to 1 throw here so a wrong vocabulary stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddMoveEffect(string fromStateId, string moveId, double weight, params ReadOnlySpan<(string ToStateId, double Chance)> chances)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(fromStateId);
+            ArgumentException.ThrowIfNullOrWhiteSpace(moveId);
+
+            var states = services
+                .Where(descriptor => descriptor.ServiceType == typeof(StateCatalog) && !descriptor.IsKeyedService)
+                .Select(descriptor => descriptor.ImplementationInstance as StateCatalog)
+                .FirstOrDefault(catalog => catalog is not null);
+            if (states is null)
+                throw new InvalidOperationException($"The states are not added, so the effect of \"{moveId}\" in \"{fromStateId}\" cannot be added. Add them with AddStates before AddMoveEffect.");
+
+            var knownState = states.Find(fromStateId).IsT0;
+            if (!knownState)
+                throw new InvalidOperationException($"The state \"{fromStateId}\" is not added. Add it with AddStates before AddMoveEffect.");
+
+            var knownMove = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(MoveRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is MoveRegistration registration
+                && registration.Move.Id == moveId);
+            if (!knownMove)
+                throw new InvalidOperationException($"The move \"{moveId}\" is not added. Add it with AddMove before AddMoveEffect.");
+
+            var taken = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(MoveEffectRegistration)
+                && !descriptor.IsKeyedService
+                && descriptor.ImplementationInstance is MoveEffectRegistration registration
+                && registration.Effect.FromStateId == fromStateId
+                && registration.Effect.MoveId == moveId);
+            if (taken)
+                throw new InvalidOperationException($"The effect of the move \"{moveId}\" in the state \"{fromStateId}\" is added twice.");
+
+            // Written so a NaN fails too, which a plain bound check would let through.
+            var weightInRange = weight > 0 && double.IsFinite(weight);
+            if (!weightInRange)
+                throw new ArgumentOutOfRangeException(nameof(weight), weight, $"The weight of the effect of \"{moveId}\" in \"{fromStateId}\" must be above 0 and finite.");
+
+            var given = new Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (var (toStateId, chance) in chances)
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(toStateId);
+
+                var knownToState = states.Find(toStateId).IsT0;
+                if (!knownToState)
+                    throw new InvalidOperationException($"The state \"{toStateId}\" in the effect of \"{moveId}\" in \"{fromStateId}\" is not added. Add it with AddStates before AddMoveEffect.");
+
+                // Written so a NaN chance fails too, which a pair of separate bound checks would let through.
+                var chanceInRange = chance >= 0 && chance <= 1;
+                if (!chanceInRange)
+                    throw new ArgumentOutOfRangeException(nameof(chances), chance, $"The chance of \"{toStateId}\" in the effect of \"{moveId}\" in \"{fromStateId}\" must be from 0 to 1.");
+
+                if (!given.TryAdd(toStateId, chance))
+                    throw new InvalidOperationException($"The effect of \"{moveId}\" in \"{fromStateId}\" gives the state \"{toStateId}\" twice.");
+            }
+
+            // A small tolerance, because chances written as decimals rarely add up to exactly 1 in floating point.
+            var total = given.Values.Sum();
+            var addsUpToOne = Math.Abs(total - 1) <= 1e-9;
+            if (!addsUpToOne)
+                throw new InvalidOperationException($"The chances of the effect of \"{moveId}\" in \"{fromStateId}\" add up to {total}, not 1.");
+
+            services.AddSingleton(MoveEffectRegistration.Create(MoveEffect.Create(
+                fromStateId,
+                moveId,
+                weight,
+                [.. states.All.Select(state => StateOdds.Create(state.Id, given.GetValueOrDefault(state.Id)))])));
+            return services;
+        }
+
+        /// <summary>
         /// Lets the engine learn how each learner learns: after every turn, the chance the learner was in each state is
-        /// added to their own counts of every signal in that state, as shown or not shown, and their rates move away
+        /// added to their own counts of every signal in that state, as shown or not shown, so their rates move away
         /// from the shared ones. The rate weight is how many turns the shared rate of a signal counts as, so a higher
         /// weight makes a learner's own counts move it more slowly.
         /// It registers the <see cref="LearningOptions"/> and an <see cref="InMemoryLearnerModelStore"/> as the
@@ -243,6 +368,8 @@ public static class RegistrationExtension
                 provider.GetRequiredService<LikelihoodTable>(),
                 provider.GetService<MoveCatalog>(),
                 provider.GetService<OutcomeSignals>(),
+                provider.GetRequiredService<MoveEffectCatalog>(),
+                provider.GetService<GoalStates>(),
                 provider.GetService<LearningOptions>()?.RateWeight ?? LearningOptions.DefaultRateWeight));
             services.AddSingleton(provider => HistoryReplayer.Create(
                 provider.GetRequiredService<OddsEngine>(),
@@ -468,6 +595,7 @@ public static class RegistrationExtension
             services.AddSingleton(provider => SessionEngine.Create(
                 provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<OddsOptions>(),
+                provider.GetRequiredService<MoveEffectCatalog>(),
                 provider.GetRequiredService<VocabularyFingerprint>(),
                 provider.GetRequiredService<IHistoryStore>(),
                 provider.GetRequiredService<HistoryReplayer>(),

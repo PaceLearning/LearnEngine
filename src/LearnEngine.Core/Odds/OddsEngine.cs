@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using LearnEngine.Core.Effects;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Signals;
@@ -8,27 +9,30 @@ using OneOf;
 namespace LearnEngine.Core.Odds;
 
 /// <summary>
-/// Keeps the odds on the state a learner is in: starts from the priors and moves the odds with every learner turn.
+/// Keeps the odds on the state a learner is in: starts from the priors, predicts where the move made leads, and moves
+/// the odds with the signals of every learner turn.
 /// </summary>
 public sealed class OddsEngine
 {
     private readonly StateCatalog states;
     private readonly SignalCatalog signals;
     private readonly LikelihoodTable likelihoods;
+    private readonly MoveEffectCatalog effects;
     private readonly double rateWeight;
 
-    private OddsEngine(StateCatalog states, SignalCatalog signals, LikelihoodTable likelihoods, double rateWeight)
+    private OddsEngine(StateCatalog states, SignalCatalog signals, LikelihoodTable likelihoods, MoveEffectCatalog effects, double rateWeight)
     {
         this.states = states;
         this.signals = signals;
         this.likelihoods = likelihoods;
+        this.effects = effects;
         this.rateWeight = rateWeight;
     }
 
-    // Internal so an engine only comes from registration, which has already checked the states, the signals, the rates
-    // and the rate weight.
-    internal static OddsEngine Create(StateCatalog states, SignalCatalog signals, LikelihoodTable likelihoods, double rateWeight) =>
-        new(states, signals, likelihoods, rateWeight);
+    // Internal so an engine only comes from registration, which has already checked the states, the signals, the rates,
+    // the move effects and the rate weight.
+    internal static OddsEngine Create(StateCatalog states, SignalCatalog signals, LikelihoodTable likelihoods, MoveEffectCatalog effects, double rateWeight) =>
+        new(states, signals, likelihoods, effects, rateWeight);
 
     /// <summary>
     /// Gives the belief before anything is known about the learner: the prior of every state.
@@ -37,27 +41,26 @@ public sealed class OddsEngine
         Belief.Create([.. states.All.Select(state => StateOdds.Create(state.Id, state.Prior))]);
 
     /// <summary>
-    /// Moves the belief part way back to the priors, as is done before every learner turn so old turns count for less.
-    /// The odds of each state become (1 minus fade) times its odds plus fade times its prior.
-    /// A fade of 0 keeps the belief and a fade of 1 gives the priors. A fade outside 0 to 1 throws.
+    /// Predicts the odds of every state at the next learner turn, from the odds now and the move the tutor made in
+    /// between: for each state after, the sum over every state now of its odds times the learner's chance that the move
+    /// leads from it there, as <see cref="LearnerModel.Effect"/> gives it. A null move is no move, whose effect is the
+    /// fade: each state keeps 1 minus the fade of its odds and gets the fade times its prior. So with
+    /// <see cref="LearnerModel.Empty"/> and no move, this is the fade the engine did before every turn until now.
+    /// A move with no effect registered in a state is read there as no move. Apply the turn's signals after this.
     /// </summary>
-    public Belief Fade(Belief belief, double fade)
+    public Belief Predict(Belief belief, LearnerModel model, string? moveMade)
     {
         ArgumentNullException.ThrowIfNull(belief);
+        ArgumentNullException.ThrowIfNull(model);
 
-        // Written so a NaN fade fails too, which a pair of separate bound checks would let through.
-        var inRange = fade >= 0 && fade <= 1;
-        if (!inRange)
-            throw new ArgumentOutOfRangeException(nameof(fade), fade, "The fade must be from 0 to 1.");
-
-        // Every state in a belief is found, because a belief only holds the registered states.
-        return Belief.Create([.. belief.All.Select(stateOdds => StateOdds.Create(
-            stateOdds.StateId,
-            (1 - fade) * stateOdds.Odds + fade * states.Find(stateOdds.StateId).AsT0.Prior))]);
+        // Every state in a belief is registered, so the catalog has an effect from each of them.
+        return Belief.Create([.. states.All.Select(to => StateOdds.Create(
+            to.Id,
+            belief.All.Sum(from => from.Odds * model.Effect(effects.For(from.StateId, moveMade), to.Id))))]);
     }
 
     /// <summary>
-    /// Applies the signals of one learner turn to the belief, with the learner's own rates. Fade the belief first, since this does not.
+    /// Applies the signals of one learner turn to the belief, with the learner's own rates. Predict the belief first, since this does not.
     /// Every registered signal counts: a signal that showed up multiplies the odds of each state by the learner's rate of
     /// it in that state, and a signal that did not show up multiplies them by 1 minus that rate. The odds are then
     /// rescaled to add up to 1. The learner's rate is the shared rate moved by the learner's counts, as

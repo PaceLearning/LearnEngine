@@ -38,7 +38,7 @@ public sealed class SessionEngineTests
         var sessions = provider.GetRequiredService<SessionEngine>();
         var histories = provider.GetRequiredService<IHistoryStore>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
-        await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var before = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
 
         var started = await sessions.StartSession(Learner, Session, CancellationToken.None);
@@ -54,7 +54,7 @@ public sealed class SessionEngineTests
         using var provider = Create();
         var sessions = provider.GetRequiredService<SessionEngine>();
 
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
         Assert.Equal(SessionNotStarted.Create(Learner, Session), reported.AsT2);
@@ -69,10 +69,61 @@ public sealed class SessionEngineTests
         var histories = provider.GetRequiredService<IHistoryStore>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
 
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst, "not.a.signal"], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst, "not.a.signal"], null, null, CancellationToken.None);
 
         Assert.True(reported.IsT1);
         Assert.Equal("not.a.signal", Assert.Single(reported.AsT1).Id);
+        Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
+    }
+
+    [Fact]
+    public async Task ReportTurn_TopicAndMoveMade_KeepsThemInTheTurn()
+    {
+        using var provider = Create();
+        var sessions = provider.GetRequiredService<SessionEngine>();
+        var histories = provider.GetRequiredService<IHistoryStore>();
+        await sessions.StartSession(Learner, Session, CancellationToken.None);
+
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], "recursion.base_case", Two, CancellationToken.None);
+
+        Assert.True(reported.IsT0);
+        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var turn = Assert.IsType<LearnerTurn>(history[1]);
+        Assert.Equal("recursion.base_case", turn.Topic);
+        Assert.Equal(Two, turn.MoveMade);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("has space")]
+    [InlineData("../up")]
+    [InlineData("tópico")]
+    public async Task ReportTurn_InvalidTopic_GivesInvalidTopicAndKeepsNothing(string topic)
+    {
+        using var provider = Create();
+        var sessions = provider.GetRequiredService<SessionEngine>();
+        var histories = provider.GetRequiredService<IHistoryStore>();
+        await sessions.StartSession(Learner, Session, CancellationToken.None);
+
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], topic, null, CancellationToken.None);
+
+        Assert.True(reported.IsT5);
+        Assert.Equal(topic, reported.AsT5.Topic);
+        Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
+    }
+
+    [Fact]
+    public async Task ReportTurn_UnknownMoveMade_GivesUnknownMoveAndKeepsNothing()
+    {
+        using var provider = Create();
+        var sessions = provider.GetRequiredService<SessionEngine>();
+        var histories = provider.GetRequiredService<IHistoryStore>();
+        await sessions.StartSession(Learner, Session, CancellationToken.None);
+
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, "not_a_move", CancellationToken.None);
+
+        Assert.True(reported.IsT6);
+        Assert.Equal("not_a_move", reported.AsT6.Id);
         Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
     }
 
@@ -84,7 +135,7 @@ public sealed class SessionEngineTests
         var histories = provider.GetRequiredService<IHistoryStore>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
 
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
         Assert.True(reported.IsT0);
         Assert.Equal(First, reported.AsT0.Belief.Leader.StateId);
@@ -106,7 +157,7 @@ public sealed class SessionEngineTests
         await sessions.StartSession(Learner, Session, CancellationToken.None);
 
         // No signals at all puts the two states close together.
-        var reported = await sessions.ReportTurn(Learner, Session, [], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [], null, null, CancellationToken.None);
 
         Assert.False(reported.AsT0.Belief.IsClear);
         Assert.True(reported.AsT0.Pick.IsT1);
@@ -118,9 +169,9 @@ public sealed class SessionEngineTests
         using var provider = Create();
         var sessions = provider.GetRequiredService<SessionEngine>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
-        await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        var worked = await sessions.ReportTurn(Learner, Session, [LeansFirst, WentWell], CancellationToken.None);
+        var worked = await sessions.ReportTurn(Learner, Session, [LeansFirst, WentWell], null, null, CancellationToken.None);
 
         var judgment = worked.AsT0.Judgment.AsT0;
         Assert.True(judgment.Worked);
@@ -139,9 +190,9 @@ public sealed class SessionEngineTests
         using var provider = Create();
         var sessions = provider.GetRequiredService<SessionEngine>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
-        await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
         Assert.Equal(One, reported.AsT0.Pick.AsT2.MoveId);
         Assert.Equal(1, reported.AsT0.Judgment.AsT1.TurnsLeft);
@@ -153,7 +204,7 @@ public sealed class SessionEngineTests
         using var provider = Create();
         var sessions = provider.GetRequiredService<SessionEngine>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
@@ -169,7 +220,7 @@ public sealed class SessionEngineTests
         await before.GetRequiredService<SessionEngine>().StartSession(Learner, Session, CancellationToken.None);
         var sessions = after.GetRequiredService<SessionEngine>();
 
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
         Assert.True(reported.IsT3);
@@ -187,7 +238,7 @@ public sealed class SessionEngineTests
         var sessions = provider.GetRequiredService<SessionEngine>();
 
         var started = await sessions.StartSession(Learner, Session, CancellationToken.None);
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], CancellationToken.None);
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
         Assert.True(started.IsT1);

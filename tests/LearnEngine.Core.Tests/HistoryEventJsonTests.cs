@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LearnEngine.Core.History;
+using LearnEngine.Core.Topics;
 using Xunit;
 
 namespace LearnEngine.Core.Tests;
@@ -31,6 +32,56 @@ public sealed class HistoryEventJsonTests
         Assert.Equal("""{"event":"learner_turn","signal_ids":["asks.how_or_why","reply.minimal"]}""", line);
         var turn = Assert.IsType<LearnerTurn>(read.AsT0);
         Assert.Equal(["asks.how_or_why", "reply.minimal"], turn.SignalIds.ToArray());
+    }
+
+    [Fact]
+    public void Write_LearnerTurnWithTopicAndMoveMade_ReadsBackTheSame()
+    {
+        var line = HistoryEventJson.Write(LearnerTurn.Create(["asks.for_help"], "recursion.base_case", "worked_example"));
+
+        var read = HistoryEventJson.Read(line);
+
+        Assert.Equal("""{"event":"learner_turn","signal_ids":["asks.for_help"],"topic":"recursion.base_case","move_made":"worked_example"}""", line);
+        var turn = Assert.IsType<LearnerTurn>(read.AsT0);
+        Assert.Equal(["asks.for_help"], turn.SignalIds.ToArray());
+        Assert.Equal("recursion.base_case", turn.Topic);
+        Assert.Equal("worked_example", turn.MoveMade);
+    }
+
+    [Fact]
+    public void Read_TurnWithoutTopicOrMoveMade_GivesNullForBoth()
+    {
+        var read = HistoryEventJson.Read("""{"event":"learner_turn","signal_ids":[]}""");
+
+        var turn = Assert.IsType<LearnerTurn>(read.AsT0);
+        Assert.Null(turn.Topic);
+        Assert.Null(turn.MoveMade);
+    }
+
+    [Theory]
+    [InlineData("recursion.base_case", true)]
+    [InlineData("a", true)]
+    [InlineData("Loops-2_while", true)]
+    [InlineData("", false)]
+    [InlineData("has space", false)]
+    [InlineData("a/b", false)]
+    [InlineData("tópico", false)]
+    public void TopicIds_IsValid_TakesLettersDigitsDotsUnderscoresAndDashes(string topic, bool valid)
+    {
+        Assert.Equal(valid, TopicIds.IsValid(topic));
+    }
+
+    [Fact]
+    public void TopicIds_IsValid_TakesAtMost64Characters()
+    {
+        Assert.True(TopicIds.IsValid(new string('a', 64)));
+        Assert.False(TopicIds.IsValid(new string('a', 65)));
+    }
+
+    [Fact]
+    public void Create_InvalidTopic_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => LearnerTurn.Create([], "not valid"));
     }
 
     [Fact]
@@ -74,6 +125,8 @@ public sealed class HistoryEventJsonTests
     [InlineData("""{"signal_ids":["reply.minimal"]}""")]
     [InlineData("""{"event":"move_picked","state_id":"following"}""")]
     [InlineData("""{"event":"learner_turn","signal_ids":[null]}""")]
+    [InlineData("""{"event":"learner_turn","signal_ids":[],"topic":"not valid"}""")]
+    [InlineData("""{"event":"learner_turn","signal_ids":[],"move_made":""}""")]
     [InlineData("""{"event":"move_picked","state_id":null,"move_id":"keep_going"}""")]
     [InlineData("not json")]
     [InlineData("null")]

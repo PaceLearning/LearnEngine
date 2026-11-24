@@ -2,8 +2,10 @@ using System.Collections.Immutable;
 using LearnEngine.Core.Bandit;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Judging;
+using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Signals;
+using LearnEngine.Core.Topics;
 using OneOf;
 
 namespace LearnEngine.Core.Sessions;
@@ -20,6 +22,7 @@ public sealed class SessionEngine
     private readonly IHistoryStore histories;
     private readonly HistoryReplayer replayer;
     private readonly SignalCatalog signals;
+    private readonly MoveCatalog moves;
     private readonly MoveJudge judge;
     private readonly MovePicker picker;
 
@@ -30,6 +33,7 @@ public sealed class SessionEngine
         IHistoryStore histories,
         HistoryReplayer replayer,
         SignalCatalog signals,
+        MoveCatalog moves,
         MoveJudge judge,
         MovePicker picker)
     {
@@ -39,6 +43,7 @@ public sealed class SessionEngine
         this.histories = histories;
         this.replayer = replayer;
         this.signals = signals;
+        this.moves = moves;
         this.judge = judge;
         this.picker = picker;
     }
@@ -51,9 +56,10 @@ public sealed class SessionEngine
         IHistoryStore histories,
         HistoryReplayer replayer,
         SignalCatalog signals,
+        MoveCatalog moves,
         MoveJudge judge,
         MovePicker picker) =>
-        new(engine, options, fingerprint, histories, replayer, signals, judge, picker);
+        new(engine, options, fingerprint, histories, replayer, signals, moves, judge, picker);
 
     /// <summary>
     /// Starts the given learner's session: its history begins with a session start stamped with the registered
@@ -77,25 +83,36 @@ public sealed class SessionEngine
     }
 
     /// <summary>
-    /// Takes one learner turn with the ids of the signals the AI reported for it, never the learner's words.
+    /// Takes one learner turn with the ids of the signals the AI reported for it, never the learner's words, the id of
+    /// the topic it was about and the id of the move the tutor made in the reply before it. The topic and the move made
+    /// are null when there is none.
     /// Every id is checked first. Then the turn is kept in the session's history, the odds are rebuilt from it, the last
     /// picked move is judged and its judgment recorded in the learner's score when this turn gives one, and when the
     /// leading state is clear and no move is still being judged, a move is picked for it and kept in the history too.
     /// Report one turn of a session at a time, since two turns reported at once could both be kept before either is judged.
     /// Ids that are not registered give the unknown signals in the order reported, a session with no history gives
     /// <see cref="SessionNotStarted"/>, a history stamped with another vocabulary gives <see cref="OtherVocabulary"/>,
-    /// and a history that cannot be read back or replayed gives <see cref="BrokenHistory"/>. Each of these is found before
-    /// the turn is kept, so nothing is kept.
+    /// a history that cannot be read back or replayed gives <see cref="BrokenHistory"/>, a topic that is not a valid topic
+    /// id gives <see cref="InvalidTopic"/>, and a move made that is not registered gives <see cref="UnknownMove"/>.
+    /// Each of these is found before the turn is kept, so nothing is kept.
     /// </summary>
-    public async Task<OneOf<TurnResult, ImmutableArray<UnknownSignal>, SessionNotStarted, OtherVocabulary, BrokenHistory>> ReportTurn(
+    public async Task<OneOf<TurnResult, ImmutableArray<UnknownSignal>, SessionNotStarted, OtherVocabulary, BrokenHistory, InvalidTopic, UnknownMove>> ReportTurn(
         string learnerId,
         string sessionId,
         IEnumerable<string> signalIds,
+        string? topic,
+        string? moveMade,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentNullException.ThrowIfNull(signalIds);
+
+        if (topic is not null && !TopicIds.IsValid(topic))
+            return InvalidTopic.Create(topic);
+
+        if (moveMade is not null && moves.Find(moveMade).IsT1)
+            return UnknownMove.Create(moveMade);
 
         ImmutableArray<string> reported = [.. signalIds];
         var nullSignalId = reported.Any(signalId => signalId is null);
@@ -132,7 +149,7 @@ public sealed class SessionEngine
             history = history.Add(before.AsT0);
         }
 
-        var turn = LearnerTurn.Create(reported);
+        var turn = LearnerTurn.Create(reported, topic, moveMade);
         await histories.Append(learnerId, sessionId, turn, cancellationToken);
         history = history.Add(turn);
 

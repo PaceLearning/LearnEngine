@@ -96,6 +96,20 @@ public sealed class HistoryReplayerTests
         Assert.Contains("not.a.signal", replayed.AsT2.Reason);
     }
 
+    [Fact]
+    public void Replay_TurnWithUnknownMoveMade_GivesBrokenHistoryAtIt()
+    {
+        using var provider = Create();
+        var replayer = provider.GetRequiredService<HistoryReplayer>();
+        var start = SessionStarted.Create(provider.GetRequiredService<VocabularyFingerprint>().Value, Fade, 0.15);
+
+        var replayed = replayer.Replay([start, LearnerTurn.Create([LeansFirst], "a.topic", One), LearnerTurn.Create([], null, "not_a_move")]);
+
+        Assert.True(replayed.IsT2);
+        Assert.Equal(2, replayed.AsT2.EventIndex);
+        Assert.Contains("not_a_move", replayed.AsT2.Reason);
+    }
+
     [Theory]
     [InlineData(1.5, 0.15)]
     [InlineData(0.15, -0.5)]

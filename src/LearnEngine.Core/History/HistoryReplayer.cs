@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using OneOf;
 
@@ -11,23 +12,27 @@ public sealed class HistoryReplayer
 {
     private readonly OddsEngine engine;
     private readonly VocabularyFingerprint fingerprint;
+    private readonly MoveCatalog? moves;
 
-    private HistoryReplayer(OddsEngine engine, VocabularyFingerprint fingerprint)
+    private HistoryReplayer(OddsEngine engine, VocabularyFingerprint fingerprint, MoveCatalog? moves)
     {
         this.engine = engine;
         this.fingerprint = fingerprint;
+        this.moves = moves;
     }
 
-    // Internal so a replayer only comes from registration, with the engine and fingerprint of the registered vocabulary.
-    internal static HistoryReplayer Create(OddsEngine engine, VocabularyFingerprint fingerprint) => new(engine, fingerprint);
+    // Internal so a replayer only comes from registration, with the engine, fingerprint and moves of the registered
+    // vocabulary. An app with no moves has no move catalog.
+    internal static HistoryReplayer Create(OddsEngine engine, VocabularyFingerprint fingerprint, MoveCatalog? moves) =>
+        new(engine, fingerprint, moves);
 
     /// <summary>
     /// Replays the history from the priors: before every learner turn the belief fades by the fade the session was
     /// started with, then the turn's signals are applied. Events that are not learner turns leave the belief as it is.
     /// The same history always gives the same belief.
     /// A history stamped with another vocabulary gives <see cref="OtherVocabulary"/>. A history that does not begin with
-    /// a session start, has a second one, has a fade or clear margin outside 0 to 1, or has a turn with a signal that is not registered
-    /// gives <see cref="BrokenHistory"/>.
+    /// a session start, has a second one, has a fade or clear margin outside 0 to 1, or has a turn with a signal or a
+    /// move made that is not registered gives <see cref="BrokenHistory"/>.
     /// </summary>
     public OneOf<Belief, OtherVocabulary, BrokenHistory> Replay(ImmutableArray<HistoryEvent> history)
     {
@@ -59,6 +64,10 @@ public sealed class HistoryReplayer
 
             if (historyEvent is not LearnerTurn turn)
                 continue;
+
+            var unknownMove = turn.MoveMade is not null && (moves is null || moves.Find(turn.MoveMade).IsT1);
+            if (unknownMove)
+                return BrokenHistory.Create(index, $"The turn has a move made that is not registered: {turn.MoveMade}.");
 
             var applied = engine.Apply(engine.Fade(belief, start.Fade), turn.SignalIds);
             if (applied.IsT1)

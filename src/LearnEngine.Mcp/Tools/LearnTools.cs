@@ -5,6 +5,7 @@ using LearnEngine.Core.Moves;
 using LearnEngine.Core.Sessions;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
+using LearnEngine.Core.Topics;
 using LearnEngine.Mcp.Compliance;
 using LearnEngine.Mcp.Storage;
 using ModelContextProtocol.Protocol;
@@ -82,6 +83,7 @@ public sealed class LearnTools(
         [Description("The number of this student message in the session, starting at 1.")] int turn,
         [Description("The ids of every signal that fits this message, from the list start_session returned. An empty list when none fit.")] string[] signals,
         [Description("The id of the move you used in your last reply, if you used one.")] string? lastMoveId = null,
+        [Description("A short id for what this message is about, such as \"recursion.base_case\": letters, digits, '.', '_' or '-', at most 64. Use the same id each time the student is on the same topic.")] string? topic = null,
         CancellationToken cancellationToken = default)
     {
         if (!FileNames.IsSafe(sessionId))
@@ -89,6 +91,9 @@ public sealed class LearnTools(
 
         if (turn < 1)
             return ToolResults.Error($"turn {turn} is not valid. turn counts the student's messages in this session, starting at 1.");
+
+        if (topic is not null && !TopicIds.IsValid(topic))
+            return ToolResults.Error($"The topic \"{topic}\" is not valid. Nothing was recorded. Call report_turn again for turn {turn} with a topic of letters, digits, '.', '_' or '-', at most {TopicIds.MaxLength}, or with no topic.");
 
         ImmutableArray<string> unknown = [.. signals
             .Select(signalId => signalId ?? "null")
@@ -102,8 +107,13 @@ public sealed class LearnTools(
         if (lastMoveId is not null)
             usedMove = "unknown";
 
+        // Only a registered move reaches the engine, so a move id the AI made up counts as no move made.
+        string? moveMade = null;
         if (lastMoveId is not null && moves.Find(lastMoveId).IsT0)
+        {
             usedMove = lastMoveId;
+            moveMade = lastMoveId;
+        }
 
         await gate.Enter(cancellationToken);
         try
@@ -113,13 +123,13 @@ public sealed class LearnTools(
             var highestBefore = last?.HighestTurn ?? 0;
             var moveSent = last?.MoveGiven;
 
-            var reported = await engine.ReportTurn(settings.LearnerId, sessionId, signals, cancellationToken);
+            var reported = await engine.ReportTurn(settings.LearnerId, sessionId, signals, topic, moveMade, cancellationToken);
             var opened = reported.IsT2;
             if (opened)
             {
                 await engine.StartSession(settings.LearnerId, sessionId, cancellationToken);
                 await compliance.Append(settings.LearnerId, sessionId, ComplianceEntry.Started(now), cancellationToken);
-                reported = await engine.ReportTurn(settings.LearnerId, sessionId, signals, cancellationToken);
+                reported = await engine.ReportTurn(settings.LearnerId, sessionId, signals, topic, moveMade, cancellationToken);
 
                 // The turns before this one went to no session, so none of them counts as skipped here.
                 highestBefore = turn - 1;
@@ -137,6 +147,13 @@ public sealed class LearnTools(
 
             if (reported.IsT4)
                 return ToolResults.Error("This session's history cannot be read, so it cannot go on. Call start_session and report this message as turn 1 of the new session.");
+
+            // Both are checked above, so the engine only gives them if its checks and the ones here ever differ.
+            if (reported.IsT5)
+                return ToolResults.Error($"The topic \"{topic}\" is not valid. Nothing was recorded. Call report_turn again for turn {turn} with another topic or none.");
+
+            if (reported.IsT6)
+                return ToolResults.Error($"The move \"{lastMoveId}\" is not known. Nothing was recorded. Call report_turn again for turn {turn} without lastMoveId.");
 
             var result = reported.AsT0;
             var belief = result.Belief;

@@ -215,7 +215,8 @@ public static class RegistrationExtension
                 provider.GetService<OutcomeSignals>()));
             services.AddSingleton(provider => HistoryReplayer.Create(
                 provider.GetRequiredService<OddsEngine>(),
-                provider.GetRequiredService<VocabularyFingerprint>()));
+                provider.GetRequiredService<VocabularyFingerprint>(),
+                provider.GetService<MoveCatalog>()));
             services.TryAddSingleton<IHistoryStore>(_ => InMemoryHistoryStore.Create());
             return services;
         }
@@ -435,6 +436,7 @@ public static class RegistrationExtension
                 provider.GetRequiredService<IHistoryStore>(),
                 provider.GetRequiredService<HistoryReplayer>(),
                 provider.GetRequiredService<SignalCatalog>(),
+                provider.GetRequiredService<MoveCatalog>(),
                 provider.GetRequiredService<MoveJudge>(),
                 provider.GetRequiredService<MovePicker>()));
             services.AddSingleton(provider => VocabularyGuide.Create(

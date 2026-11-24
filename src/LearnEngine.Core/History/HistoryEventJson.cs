@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LearnEngine.Core.Topics;
 using OneOf;
 
 namespace LearnEngine.Core.History;
@@ -47,6 +48,14 @@ public static class HistoryEventJson
         var nullSignalId = historyEvent is LearnerTurn turn && turn.SignalIds.Any(signalId => signalId is null);
         if (nullSignalId)
             return UnreadableEvent.Create(line, "The turn has a signal id that is null.");
+
+        var invalidTopic = historyEvent is LearnerTurn { Topic: not null } topicTurn && !TopicIds.IsValid(topicTurn.Topic);
+        if (invalidTopic)
+            return UnreadableEvent.Create(line, "The turn has a topic that is not a valid topic id.");
+
+        var emptyMove = historyEvent is LearnerTurn { MoveMade: not null } moveTurn && string.IsNullOrWhiteSpace(moveTurn.MoveMade);
+        if (emptyMove)
+            return UnreadableEvent.Create(line, "The turn has a move made that is empty.");
 
         return historyEvent;
     }

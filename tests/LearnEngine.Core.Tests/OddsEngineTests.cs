@@ -37,7 +37,7 @@ public sealed class OddsEngineTests
 
         var applied = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]);
 
-        // leans.first showed up and leans.second did not. The two outcome signals have the same rate in both states,
+        // leans.first showed up and leans.second did not. went.well and went.badly have the same rate in both states,
         // so they cancel out when the odds are rescaled.
         var first = FirstPrior * 0.5 * (1 - 0.2);
         var second = SecondPrior * 0.1 * (1 - 0.4);
@@ -115,8 +115,8 @@ public sealed class OddsEngineTests
         {
             predicted = engine.Apply(engine.Predict(predicted, LearnerModel.Empty, null), LearnerModel.Empty, turn).AsT0;
 
-            // The fade the engine did before every turn until now, then the turn's rates, worked out by hand. The two
-            // outcome signals have the same rate in both states, so they cancel out.
+            // The fade the engine did before every turn until now, then the turn's rates, worked out by hand.
+            // went.well and went.badly have the same rate in both states, so they cancel out.
             var fadedFirst = (1 - fade) * today + fade * FirstPrior;
             var first = fadedFirst * 0.5 * (turn.Contains(LeansSecond) ? 0.2 : 0.8);
             var second = (1 - fadedFirst) * (turn.Contains(LeansFirst) ? 0.1 : 0.9) * (turn.Contains(LeansSecond) ? 0.4 : 0.6);

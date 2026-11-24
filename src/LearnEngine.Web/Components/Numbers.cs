@@ -20,7 +20,7 @@ public static class Numbers
         Math.Round(count, 1).ToString("0.#", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// A rate, chance or score with two decimals, such as "0.17".
+    /// A rate, chance or bound with two decimals, such as "0.17".
     /// </summary>
     public static string Two(double value) =>
         value.ToString("0.00", CultureInfo.InvariantCulture);

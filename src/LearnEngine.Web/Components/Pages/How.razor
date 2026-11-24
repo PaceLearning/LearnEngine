@@ -176,14 +176,14 @@
             <p>For each move the clear state allows, the goal chance is the sum over every state of its odds times this student's chance that the
             move leads from there to @goalNames. To it is added a bonus that is larger the less evidence there is for the move: the square root
             of 2 times the log of the evidence of all the allowed moves, divided by the evidence of this one. The evidence is the student's own
-            messages after the move plus what the guess counts as. The highest wins, and the answer says why, from the counts.</p>
+            messages after the move plus what the guess counts as. The goal chance plus the bonus is the bound. The highest bound wins, and the answer says why, from the counts.</p>
         </div>
         @if (!weighed.IsEmpty)
         {
             <div class="pace-card le-table-wrap le-example">
                 <p class="le-cap">Example: the moves for @after.Leader.StateId after that third message, for a new student</p>
                 <table class="le-table">
-                    <thead><tr><th>Move</th><th>Goal chance</th><th>Evidence</th><th>Bonus</th><th>Score</th></tr></thead>
+                    <thead><tr><th>Move</th><th>Goal chance</th><th>Evidence</th><th>Bonus</th><th>Bound</th></tr></thead>
                     <tbody>
                         @foreach (var move in weighed)
                         {

@@ -76,7 +76,7 @@
                         <p class="le-said">@view.Pick.Why Goal chance @Numbers.Percent(view.Pick.GoalChance).</p>
                     }
                     <div class="le-why">
-                        <span class="is-head"><span>Allowed move</span><span>Goal</span><span>Evidence</span><span>Score</span></span>
+                        <span class="is-head"><span>Allowed move</span><span>Goal</span><span>Evidence</span><span>Bound</span></span>
                         @foreach (var move in view.Weighed)
                         {
                             <span class="@(move.MoveId == picked ? "is-pick" : "")">

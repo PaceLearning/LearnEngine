@@ -225,12 +225,14 @@
     private void OnShown(TurnShown shown)
     {
         var follows = SessionId is null || shown.SessionId == shownId;
-        if (follows)
-            _ = InvokeAsync(async () =>
-            {
-                await Load();
-                StateHasChanged();
-            });
+        if (!follows)
+            return;
+
+        _ = InvokeAsync(async () =>
+        {
+            await Load();
+            StateHasChanged();
+        });
     }
 
     // Reads the session back from its history. A read that meets the file while a turn is being written keeps the

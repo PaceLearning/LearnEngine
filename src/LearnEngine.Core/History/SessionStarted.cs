@@ -3,9 +3,8 @@ using System.Text.Json.Serialization;
 namespace LearnEngine.Core.History;
 
 /// <summary>
-/// The first event of every session: the vocabulary the session is kept under, the fade it uses and the clear margin
-/// it uses. A history is only replayed under the same vocabulary and always with this fade and clear margin, so it
-/// gives the same belief every time.
+/// The first event of every session: the vocabulary the session is kept under, the fade of that vocabulary and the
+/// clear margin it uses. A history is only replayed under the same vocabulary, so it gives the same belief every time.
 /// </summary>
 public sealed class SessionStarted : HistoryEvent
 {
@@ -15,7 +14,8 @@ public sealed class SessionStarted : HistoryEvent
     public string Fingerprint { get; }
 
     /// <summary>
-    /// How far the belief moves back to the priors before every learner turn of the session, from 0 to 1.
+    /// The fade of the vocabulary when the session started, from 0 to 1, kept only as a record.
+    /// A replay takes the fade from the vocabulary, which the fingerprint covers, so it never reads this one.
     /// </summary>
     public double Fade { get; }
 

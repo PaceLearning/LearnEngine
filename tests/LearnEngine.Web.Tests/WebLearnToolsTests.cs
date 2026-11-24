@@ -1,12 +1,10 @@
-using System.Text.Json;
 using LearnEngine.Core.Registration;
 using LearnEngine.Mcp.Storage;
-using LearnEngine.Mcp.Tools;
 using LearnEngine.Teaching;
+using LearnEngine.Tests;
 using LearnEngine.Web.Feed;
 using LearnEngine.Web.Tools;
 using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Protocol;
 using Xunit;
 
 namespace LearnEngine.Web.Tests;
@@ -30,7 +28,7 @@ public sealed class WebLearnToolsTests : IDisposable
         var feed = provider.GetRequiredService<EngineFeed>();
         var heard = new List<TurnShown>();
         feed.Shown += heard.Add;
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
 
         await tools.ReportTurn(sessionId, 1, ["asks.how_or_why"], null, "recursion.base_case");
         await tools.ReportTurn(sessionId, 2, ["reply.minimal"]);
@@ -47,7 +45,7 @@ public sealed class WebLearnToolsTests : IDisposable
         using var provider = Create();
         var tools = provider.GetRequiredService<WebLearnTools>();
         var feed = provider.GetRequiredService<EngineFeed>();
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
 
         var badTopic = await tools.ReportTurn(sessionId, 1, ["asks.how_or_why"], null, "not a topic");
         var badSignal = await tools.ReportTurn(sessionId, 1, ["says.nothing_known"]);
@@ -62,9 +60,9 @@ public sealed class WebLearnToolsTests : IDisposable
     {
         using var provider = Create();
         var tools = provider.GetRequiredService<WebLearnTools>();
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
 
-        var answer = Read(await tools.ReportTurn(sessionId, 1, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
+        var answer = ToolAnswers.Read(await tools.ReportTurn(sessionId, 1, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
 
         Assert.Equal(1, answer.GetProperty("turn").GetInt32());
         Assert.True(answer.TryGetProperty("expect", out _));
@@ -90,17 +88,9 @@ public sealed class WebLearnToolsTests : IDisposable
         services
             .AddFileStores(ServerSettings.Create(dataFolder, "me"))
             .AddTeachingVocabulary()
-            .AddLearnEngine();
-        services.AddSingleton(TurnGate.Create());
-        services.AddSingleton(EngineFeed.Create());
-        services.AddSingleton<LearnTools>();
+            .AddLearnEngine()
+            .AddLearnEngineWeb();
         services.AddSingleton<WebLearnTools>();
         return services.BuildServiceProvider();
-    }
-
-    private static JsonElement Read(CallToolResult result)
-    {
-        Assert.NotEqual(true, result.IsError);
-        return result.StructuredContent!.Value;
     }
 }

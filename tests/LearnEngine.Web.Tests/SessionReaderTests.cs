@@ -1,16 +1,14 @@
 using System.Globalization;
-using System.Text.Json;
 using LearnEngine.Core.Choosing;
 using LearnEngine.Core.History;
-using LearnEngine.Core.Learning;
 using LearnEngine.Core.Prediction;
 using LearnEngine.Core.Registration;
 using LearnEngine.Mcp.Storage;
 using LearnEngine.Mcp.Tools;
 using LearnEngine.Teaching;
+using LearnEngine.Tests;
 using LearnEngine.Web.Sessions;
 using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Protocol;
 using Xunit;
 
 namespace LearnEngine.Web.Tests;
@@ -35,7 +33,7 @@ public sealed class SessionReaderTests : IDisposable
         using var provider = Create();
         var tools = provider.GetRequiredService<LearnTools>();
         var reader = provider.GetRequiredService<SessionReader>();
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
         await tools.ReportTurn(sessionId, 1, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case");
         await tools.ReportTurn(sessionId, 2, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case");
         await tools.ReportTurn(sessionId, 3, ["says.dont_get_it", "asks.for_help"], null, "recursion.call_stack");
@@ -66,7 +64,7 @@ public sealed class SessionReaderTests : IDisposable
         using var provider = Create();
         var tools = provider.GetRequiredService<LearnTools>();
         var reader = provider.GetRequiredService<SessionReader>();
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
         for (var turn = 1; turn <= 3; turn++)
             await tools.ReportTurn(sessionId, turn, ["says.dont_get_it", "asks.for_help"]);
 
@@ -89,13 +87,13 @@ public sealed class SessionReaderTests : IDisposable
         using var provider = Create();
         var tools = provider.GetRequiredService<LearnTools>();
         var reader = provider.GetRequiredService<SessionReader>();
-        var first = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var first = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
         await tools.ReportTurn(first, 1, ["asks.how_or_why"], null, "recursion.base_case");
         await tools.ReportTurn(first, 2, ["reply.minimal"], null, "recursion.base_case");
         var before = (await reader.Read(Learner, first, CancellationToken.None)).AsT0;
 
         // Another session teaches the engine a lot about the same learner.
-        var second = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var second = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
         for (var turn = 1; turn <= 10; turn++)
             await tools.ReportTurn(second, turn, ["says.dont_get_it"], null, "recursion.call_stack");
 
@@ -145,20 +143,8 @@ public sealed class SessionReaderTests : IDisposable
         services
             .AddFileStores(ServerSettings.Create(dataFolder, Learner))
             .AddTeachingVocabulary()
-            .AddLearnEngine();
-        services.AddSingleton(TurnGate.Create());
-        services.AddSingleton<LearnTools>();
-        services.AddSingleton(provider => SessionReader.Create(
-            provider.GetRequiredService<IHistoryStore>(),
-            provider.GetRequiredService<HistoryReplayer>(),
-            provider.GetRequiredService<ILearnerModelStore>(),
-            provider.GetRequiredService<MoveChooser>()));
+            .AddLearnEngine()
+            .AddLearnEngineWeb();
         return services.BuildServiceProvider();
-    }
-
-    private static JsonElement Read(CallToolResult result)
-    {
-        Assert.NotEqual(true, result.IsError);
-        return result.StructuredContent!.Value;
     }
 }

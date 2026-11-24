@@ -15,6 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\ToolAnswers.cs" Link="Shared\ToolAnswers.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\LearnEngine.Mcp\LearnEngine.Mcp.csproj" />
   </ItemGroup>
 

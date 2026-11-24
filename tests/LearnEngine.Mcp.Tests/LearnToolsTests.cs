@@ -4,8 +4,8 @@ using LearnEngine.Mcp;
 using LearnEngine.Mcp.Storage;
 using LearnEngine.Mcp.Tools;
 using LearnEngine.Teaching;
+using LearnEngine.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Protocol;
 using Xunit;
 
 namespace LearnEngine.Mcp.Tests;
@@ -26,11 +26,11 @@ public sealed class LearnToolsTests : IDisposable
     {
         using var provider = Create();
         var tools = provider.GetRequiredService<LearnTools>();
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
 
-        var first = Read(await tools.ReportTurn(sessionId, 1, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
-        var second = Read(await tools.ReportTurn(sessionId, 2, ["says.dont_get_it", "asks.for_help"], MoveId(first), "recursion.base_case"));
-        var third = Read(await tools.ReportTurn(sessionId, 3, ["asks.how_or_why"], MoveId(second), "recursion.call_stack"));
+        var first = ToolAnswers.Read(await tools.ReportTurn(sessionId, 1, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
+        var second = ToolAnswers.Read(await tools.ReportTurn(sessionId, 2, ["says.dont_get_it", "asks.for_help"], MoveId(first), "recursion.base_case"));
+        var third = ToolAnswers.Read(await tools.ReportTurn(sessionId, 3, ["asks.how_or_why"], MoveId(second), "recursion.call_stack"));
 
         foreach (var answer in new[] { first, second, third })
         {
@@ -73,11 +73,11 @@ public sealed class LearnToolsTests : IDisposable
     {
         using var provider = Create();
         var tools = provider.GetRequiredService<LearnTools>();
-        var sessionId = Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
 
         JsonElement answer = default;
         for (var turn = 1; turn <= 3; turn++)
-            answer = Read(await tools.ReportTurn(sessionId, turn, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
+            answer = ToolAnswers.Read(await tools.ReportTurn(sessionId, turn, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
 
         Assert.True(answer.GetProperty("clear").GetBoolean());
         Assert.Equal(JsonValueKind.Object, answer.GetProperty("move").ValueKind);
@@ -90,7 +90,7 @@ public sealed class LearnToolsTests : IDisposable
     {
         using var provider = Create();
         var tools = provider.GetRequiredService<LearnTools>();
-        var firstSession = Read(await tools.StartSession());
+        var firstSession = ToolAnswers.Read(await tools.StartSession());
         Assert.Equal(0, firstSession.GetProperty("topics").GetArrayLength());
 
         var sessionId = firstSession.GetProperty("sessionId").GetString()!;
@@ -98,7 +98,7 @@ public sealed class LearnToolsTests : IDisposable
         await tools.ReportTurn(sessionId, 2, ["offers.own_answer"], null, "recursion.call_stack");
         await tools.ReportTurn(sessionId, 3, ["answers.correctly"], null, "recursion.base_case");
 
-        var secondSession = Read(await tools.StartSession());
+        var secondSession = ToolAnswers.Read(await tools.StartSession());
 
         Assert.Equal(
             ["recursion.base_case", "recursion.call_stack"],
@@ -119,14 +119,6 @@ public sealed class LearnToolsTests : IDisposable
         services.AddSingleton(TurnGate.Create());
         services.AddSingleton<LearnTools>();
         return services.BuildServiceProvider();
-    }
-
-    private static JsonElement Read(CallToolResult result)
-    {
-        Assert.NotEqual(true, result.IsError);
-        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
-        Assert.Equal(text, result.StructuredContent!.Value.GetRawText());
-        return JsonDocument.Parse(text).RootElement.Clone();
     }
 
     private static string? MoveId(JsonElement answer) =>

@@ -1,15 +1,11 @@
-using LearnEngine.Core.Choosing;
-using LearnEngine.Core.History;
-using LearnEngine.Core.Learning;
 using LearnEngine.Core.Registration;
 using LearnEngine.Mcp;
 using LearnEngine.Mcp.Prompts;
 using LearnEngine.Mcp.Storage;
 using LearnEngine.Mcp.Tools;
 using LearnEngine.Teaching;
+using LearnEngine.Web;
 using LearnEngine.Web.Components;
-using LearnEngine.Web.Feed;
-using LearnEngine.Web.Sessions;
 using LearnEngine.Web.Tools;
 using ModelContextProtocol.Protocol;
 
@@ -27,16 +23,8 @@ if (string.IsNullOrWhiteSpace(learnerId))
 builder.Services
     .AddFileStores(ServerSettings.Create(dataFolder, learnerId))
     .AddTeachingVocabulary()
-    .AddLearnEngine();
-
-builder.Services.AddSingleton(TurnGate.Create());
-builder.Services.AddSingleton(EngineFeed.Create());
-builder.Services.AddSingleton<LearnTools>();
-builder.Services.AddSingleton(provider => SessionReader.Create(
-    provider.GetRequiredService<IHistoryStore>(),
-    provider.GetRequiredService<HistoryReplayer>(),
-    provider.GetRequiredService<ILearnerModelStore>(),
-    provider.GetRequiredService<MoveChooser>()));
+    .AddLearnEngine()
+    .AddLearnEngineWeb();
 
 builder.Services
     .AddRazorComponents()

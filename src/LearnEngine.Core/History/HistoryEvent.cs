@@ -12,6 +12,7 @@ namespace LearnEngine.Core.History;
 [JsonDerivedType(typeof(SessionStarted), "session_started")]
 [JsonDerivedType(typeof(LearnerTurn), "learner_turn")]
 [JsonDerivedType(typeof(TurnLearned), "turn_learned")]
+[JsonDerivedType(typeof(TurnExpected), "turn_expected")]
 [JsonDerivedType(typeof(MovePicked), "move_picked")]
 [JsonDerivedType(typeof(MoveJudged), "move_judged")]
 public abstract class HistoryEvent

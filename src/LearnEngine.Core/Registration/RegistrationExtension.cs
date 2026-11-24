@@ -8,6 +8,7 @@ using LearnEngine.Core.Learning;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
+using LearnEngine.Core.Prediction;
 using LearnEngine.Core.Sessions;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
@@ -567,7 +568,8 @@ public static class RegistrationExtension
         /// Registers the <see cref="SessionEngine"/>, the one service the app or an MCP host calls to start a session,
         /// report each learner turn and read the belief. Call it last, after the vocabulary: the signals, states,
         /// likelihoods, odds, history, moves allowed in each state, the success and failure signals and the learning.
-        /// It also registers the <see cref="VocabularyGuide"/> the AI reads, written once from the vocabulary when first resolved.
+        /// It also registers the <see cref="VocabularyGuide"/> the AI reads, written once from the vocabulary when first
+        /// resolved, and the <see cref="Predictor"/> that says what is expected of the next turn.
         /// It takes no options of its own, because the fade and clear margin are given to AddOdds, the rate weight to
         /// AddLearning, and the stores are the ones registered by AddHistory, AddMoveFor and AddLearning.
         /// No success or failure signal or no AddLearning before this call, or a second call, throws here so a wrong
@@ -603,7 +605,14 @@ public static class RegistrationExtension
                 provider.GetRequiredService<MoveCatalog>(),
                 provider.GetRequiredService<MoveJudge>(),
                 provider.GetRequiredService<MovePicker>(),
-                provider.GetRequiredService<ILearnerModelStore>()));
+                provider.GetRequiredService<ILearnerModelStore>(),
+                provider.GetRequiredService<Predictor>()));
+            services.AddSingleton(provider => Predictor.Create(
+                provider.GetRequiredService<OddsEngine>(),
+                provider.GetRequiredService<SignalCatalog>(),
+                provider.GetRequiredService<LikelihoodTable>(),
+                provider.GetService<GoalStates>(),
+                provider.GetRequiredService<LearningOptions>().RateWeight));
             services.AddSingleton(provider => VocabularyGuide.Create(
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<StateCatalog>(),

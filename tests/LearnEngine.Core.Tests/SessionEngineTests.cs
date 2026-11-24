@@ -30,8 +30,9 @@ public sealed class SessionEngineTests
         Assert.Equal(FirstPrior, started.AsT0.All[0].Odds, 10);
         Assert.True(started.AsT0.IsClear);
         var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
-        var start =Assert.IsType<SessionStarted>(Assert.Single(history));
-        Assert.Equal(provider.GetRequiredService<VocabularyFingerprint>().Value, start.Fingerprint);
+        Assert.Collection(history,
+            historyEvent => Assert.Equal(provider.GetRequiredService<VocabularyFingerprint>().Value, Assert.IsType<SessionStarted>(historyEvent).Fingerprint),
+            historyEvent => Assert.Null(Assert.IsType<TurnExpected>(historyEvent).Expected.MoveId));
     }
 
     [Fact]
@@ -76,7 +77,7 @@ public sealed class SessionEngineTests
 
         Assert.True(reported.IsT1);
         Assert.Equal("not.a.signal", Assert.Single(reported.AsT1).Id);
-        Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
+        Assert.DoesNotContain((await histories.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -91,7 +92,7 @@ public sealed class SessionEngineTests
 
         Assert.True(reported.IsT0);
         var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
-        var turn = Assert.IsType<LearnerTurn>(history[1]);
+        var turn = Assert.IsType<LearnerTurn>(history[2]);
         Assert.Equal("recursion.base_case", turn.Topic);
         Assert.Equal(Two, turn.MoveMade);
     }
@@ -112,7 +113,7 @@ public sealed class SessionEngineTests
 
         Assert.True(reported.IsT5);
         Assert.Equal(topic, reported.AsT5.Topic);
-        Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
+        Assert.DoesNotContain((await histories.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -127,7 +128,7 @@ public sealed class SessionEngineTests
 
         Assert.True(reported.IsT6);
         Assert.Equal("not_a_move", reported.AsT6.Id);
-        Assert.Single((await histories.Load(Learner, Session, CancellationToken.None)).AsT0);
+        Assert.DoesNotContain((await histories.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -148,9 +149,11 @@ public sealed class SessionEngineTests
         var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
         Assert.Collection(history,
             historyEvent => Assert.IsType<SessionStarted>(historyEvent),
+            historyEvent => Assert.IsType<TurnExpected>(historyEvent),
             historyEvent => Assert.IsType<LearnerTurn>(historyEvent),
             historyEvent => Assert.IsType<TurnLearned>(historyEvent),
-            historyEvent => Assert.Equal(One, Assert.IsType<MovePicked>(historyEvent).MoveId));
+            historyEvent => Assert.Equal(One, Assert.IsType<MovePicked>(historyEvent).MoveId),
+            historyEvent => Assert.Equal(One, Assert.IsType<TurnExpected>(historyEvent).Expected.MoveId));
     }
 
     [Fact]
@@ -190,7 +193,7 @@ public sealed class SessionEngineTests
         Assert.Equal(4 * 2, model.Rates.Length);
 
         var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
-        var learned = Assert.IsType<TurnLearned>(history[2]);
+        var learned = Assert.IsType<TurnLearned>(history[3]);
         Assert.Equal(odds.Select(stateOdds => stateOdds.Odds), learned.Odds.Select(stateOdds => stateOdds.Odds));
         Assert.Equal(model.Rates.Length, learned.Added.Rates.Length);
     }
@@ -345,7 +348,7 @@ public sealed class SessionEngineTests
         Assert.Equal(after.GetRequiredService<VocabularyFingerprint>().Value, reported.AsT3.Expected);
         Assert.Equal(before.GetRequiredService<VocabularyFingerprint>().Value, reported.AsT3.Found);
         Assert.True(belief.IsT2);
-        Assert.Single((await store.Load(Learner, Session, CancellationToken.None)).AsT0);
+        Assert.DoesNotContain((await store.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]

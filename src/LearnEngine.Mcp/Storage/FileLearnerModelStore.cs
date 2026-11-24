@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LearnEngine.Core.Learning;
+using LearnEngine.Core.Topics;
 
 namespace LearnEngine.Mcp.Storage;
 
@@ -63,9 +64,27 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
         if (badStep)
             throw new InvalidDataException($"{path} has a step count that is null, has an empty id or is not 0 or more.");
 
+        var badLink = saved.TopicLinks.Any(count =>
+            count is null
+            || !TopicIds.IsValid(count.FromTopic)
+            || !TopicIds.IsValid(count.ToTopic)
+            || !(count.Count >= 0 && double.IsFinite(count.Count)));
+        if (badLink)
+            throw new InvalidDataException($"{path} has a topic link count that is null, has a topic that is not valid or is not 0 or more.");
+
+        var badTopicState = saved.TopicStates.Any(count =>
+            count is null
+            || !TopicIds.IsValid(count.Topic)
+            || string.IsNullOrWhiteSpace(count.StateId)
+            || !(count.Count >= 0 && double.IsFinite(count.Count)));
+        if (badTopicState)
+            throw new InvalidDataException($"{path} has a topic state count that is null, has a topic or state that is not valid or is not 0 or more.");
+
         return LearnerModel.Create(
             saved.Rates.Select(count => RateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)),
-            saved.Effects.Select(count => EffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)));
+            saved.Effects.Select(count => EffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)),
+            saved.TopicLinks.Select(count => TopicLinkCount.Create(count.FromTopic, count.ToTopic, count.Count)),
+            saved.TopicStates.Select(count => TopicStateCount.Create(count.Topic, count.StateId, count.Count)));
     }
 
     /// <inheritdoc/>
@@ -82,7 +101,9 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
             var model = (await Load(learnerId, cancellationToken)).Add(change);
             var saved = SavedLearnerModel.Create(
                 model.Rates.Select(count => SavedRateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)),
-                model.Effects.Select(count => SavedEffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)));
+                model.Effects.Select(count => SavedEffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)),
+                model.TopicLinks.Select(count => SavedTopicLinkCount.Create(count.FromTopic, count.ToTopic, count.Count)),
+                model.TopicStates.Select(count => SavedTopicStateCount.Create(count.Topic, count.StateId, count.Count)));
             var json = JsonSerializer.Serialize(saved, StorageJsonContext.Default.SavedLearnerModel);
 
             var path = Path.Combine(folder, learnerId + ".json");

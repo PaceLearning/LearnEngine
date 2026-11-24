@@ -2,6 +2,7 @@ using System.Text.Json;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
+using LearnEngine.Core.Prediction;
 using LearnEngine.Core.Topics;
 using Xunit;
 
@@ -98,7 +99,7 @@ public sealed class HistoryEventJsonTests
         var line = HistoryEventJson.Write(learned);
         var read = HistoryEventJson.Read(line);
 
-        Assert.Equal("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":0.75},{"state_id":"following","odds":0.25}],"added":{"rates":[{"signal_id":"asks.for_help","state_id":"stuck","shown":0.75,"not_shown":0}],"effects":[{"from_state_id":"stuck","move_id":"worked_example","to_state_id":"following","count":0.5},{"from_state_id":"stuck","move_id":null,"to_state_id":"stuck","count":0.25}]}}""", line);
+        Assert.Equal("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":0.75},{"state_id":"following","odds":0.25}],"added":{"rates":[{"signal_id":"asks.for_help","state_id":"stuck","shown":0.75,"not_shown":0}],"effects":[{"from_state_id":"stuck","move_id":"worked_example","to_state_id":"following","count":0.5},{"from_state_id":"stuck","move_id":null,"to_state_id":"stuck","count":0.25}],"topic_links":[],"topic_states":[]}}""", line);
         var readBack = Assert.IsType<TurnLearned>(read.AsT0);
         Assert.Equal(["stuck", "following"], readBack.Odds.Select(stateOdds => stateOdds.StateId));
         Assert.Equal(0.75, readBack.Odds[0].Odds);
@@ -115,6 +116,55 @@ public sealed class HistoryEventJsonTests
 
         var learned = Assert.IsType<TurnLearned>(read.AsT0);
         Assert.Empty(learned.Added.Effects);
+        Assert.Empty(learned.Added.TopicLinks);
+        Assert.Empty(learned.Added.TopicStates);
+    }
+
+    [Fact]
+    public void Write_TurnLearnedWithTopics_ReadsBackTheSame()
+    {
+        var learned = TurnLearned.Create(
+            [StateOdds.Create("stuck", 1)],
+            LearnerModelChange.Create(
+                [],
+                [],
+                [TopicLinkCount.Create("recursion.base_case", "recursion.call_stack", 1)],
+                [TopicStateCount.Create("recursion.call_stack", "stuck", 1)]));
+
+        var read = HistoryEventJson.Read(HistoryEventJson.Write(learned));
+
+        var readBack = Assert.IsType<TurnLearned>(read.AsT0);
+        Assert.Equal(TopicLinkCount.Create("recursion.base_case", "recursion.call_stack", 1), Assert.Single(readBack.Added.TopicLinks));
+        Assert.Equal(TopicStateCount.Create("recursion.call_stack", "stuck", 1), Assert.Single(readBack.Added.TopicStates));
+    }
+
+    [Fact]
+    public void Write_TurnExpected_ReadsBackTheSame()
+    {
+        var expected = TurnExpected.Create(Expectation.Create(
+            "worked_example",
+            [StateOdds.Create("stuck", 0.25), StateOdds.Create("following", 0.75)],
+            [SignalChance.Create("asks.how_or_why", 0.31)],
+            [TopicChance.Create("recursion.base_case", 0.55), TopicChance.Create("recursion.call_stack", 0.45)]));
+
+        var line = HistoryEventJson.Write(expected);
+        var read = HistoryEventJson.Read(line);
+
+        Assert.Equal("""{"event":"turn_expected","expected":{"move_id":"worked_example","odds":[{"state_id":"stuck","odds":0.25},{"state_id":"following","odds":0.75}],"signals":[{"signal_id":"asks.how_or_why","chance":0.31}],"topics":[{"topic":"recursion.base_case","chance":0.55},{"topic":"recursion.call_stack","chance":0.45}]}}""", line);
+        var readBack = Assert.IsType<TurnExpected>(read.AsT0).Expected;
+        Assert.Equal("worked_example", readBack.MoveId);
+        Assert.Equal(expected.Expected.Odds.AsEnumerable(), readBack.Odds.AsEnumerable());
+        Assert.Equal(expected.Expected.Signals.AsEnumerable(), readBack.Signals.AsEnumerable());
+        Assert.Equal(expected.Expected.Topics.AsEnumerable(), readBack.Topics.AsEnumerable());
+    }
+
+    [Theory]
+    [InlineData("""{"event":"turn_expected","expected":{"move_id":null,"odds":[],"signals":[],"topics":[{"topic":"not valid","chance":1}]}}""")]
+    [InlineData("""{"event":"turn_expected","expected":{"move_id":null,"odds":[],"signals":[null],"topics":[]}}""")]
+    [InlineData("""{"event":"turn_learned","odds":[],"added":{"rates":[],"topic_links":[{"from_topic":"a","to_topic":"not valid","count":1}]}}""")]
+    public void Read_TopicNotValidOrNullChance_GivesUnreadableEvent(string line)
+    {
+        Assert.True(HistoryEventJson.Read(line).IsT1);
     }
 
     [Fact]
@@ -199,6 +249,7 @@ public sealed class HistoryEventJsonTests
             LearnerTurn.Create(["reply.minimal"]),
             MovePicked.Create("stuck", "worked_example"),
             MoveJudged.Create("stuck", "worked_example", true),
+            TurnExpected.Create(Expectation.Create(null, [StateOdds.Create("stuck", 1)], [SignalChance.Create("reply.minimal", 0.5)], [])),
         ];
 
         foreach (var historyEvent in events)

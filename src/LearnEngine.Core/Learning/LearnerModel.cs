@@ -7,7 +7,7 @@ namespace LearnEngine.Core.Learning;
 
 /// <summary>
 /// What the engine has learned about how one learner learns, kept as soft counts on top of the shared guesses the app
-/// registered. A learner with no counts is read exactly as the shared vocabulary says, and moves away from it as their
+/// registered, with which topic they ask about after which and how they did on each topic. A learner with no counts is read exactly as the shared vocabulary says, and moves away from it as their
 /// turns come. A model never changes. Adding a change to it gives a new one.
 /// </summary>
 public sealed class LearnerModel
@@ -24,6 +24,8 @@ public sealed class LearnerModel
         FrozenDictionary<(string, string?, string), double>.Empty,
         FrozenDictionary<(string, string?), double>.Empty,
         [],
+        [],
+        [],
         []);
 
     /// <summary>
@@ -37,26 +39,52 @@ public sealed class LearnerModel
     /// </summary>
     public ImmutableArray<EffectCount> Effects { get; }
 
+    /// <summary>
+    /// The learner's counts of every topic followed by another, at most one per pair of topics, in the order first seen.
+    /// </summary>
+    public ImmutableArray<TopicLinkCount> TopicLinks { get; }
+
+    /// <summary>
+    /// The learner's counts of every state on every topic, at most one per topic and state, in the order first seen.
+    /// </summary>
+    public ImmutableArray<TopicStateCount> TopicStates { get; }
+
+    /// <summary>
+    /// The id of every topic the learner has had a turn on, each once, in the order first seen.
+    /// </summary>
+    public ImmutableArray<string> Topics { get; }
+
     private LearnerModel(
         FrozenDictionary<(string SignalId, string StateId), RateCount> rates,
         FrozenDictionary<(string FromStateId, string? MoveId, string ToStateId), double> effects,
         FrozenDictionary<(string FromStateId, string? MoveId), double> effectTotals,
         ImmutableArray<RateCount> allRates,
-        ImmutableArray<EffectCount> allEffects)
+        ImmutableArray<EffectCount> allEffects,
+        ImmutableArray<TopicLinkCount> topicLinks,
+        ImmutableArray<TopicStateCount> topicStates)
     {
         this.rates = rates;
         this.effects = effects;
         this.effectTotals = effectTotals;
         Rates = allRates;
         Effects = allEffects;
+        TopicLinks = topicLinks;
+        TopicStates = topicStates;
+        Topics = [.. topicStates.Select(count => count.Topic)
+            .Concat(topicLinks.SelectMany(count => new[] { count.FromTopic, count.ToTopic }))
+            .Distinct(StringComparer.Ordinal)];
     }
 
     /// <summary>
     /// Creates the model with the given counts, such as a store read back from its file. Counts of the same signal and
-    /// state, or of the same step, are summed.
+    /// state, of the same step, of the same pair of topics or of the same topic and state are summed.
     /// </summary>
-    public static LearnerModel Create(IEnumerable<RateCount> rates, IEnumerable<EffectCount> effects) =>
-        Empty.Add(LearnerModelChange.Create(rates, effects));
+    public static LearnerModel Create(
+        IEnumerable<RateCount> rates,
+        IEnumerable<EffectCount> effects,
+        IEnumerable<TopicLinkCount>? topicLinks = null,
+        IEnumerable<TopicStateCount>? topicStates = null) =>
+        Empty.Add(LearnerModelChange.Create(rates, effects, topicLinks, topicStates));
 
     /// <summary>
     /// Gives a new model with the counts of the change added to this one's.
@@ -65,7 +93,11 @@ public sealed class LearnerModel
     {
         ArgumentNullException.ThrowIfNull(change);
 
-        var summed = LearnerModelChange.Create(Rates.Concat(change.Rates), Effects.Concat(change.Effects));
+        var summed = LearnerModelChange.Create(
+            Rates.Concat(change.Rates),
+            Effects.Concat(change.Effects),
+            TopicLinks.Concat(change.TopicLinks),
+            TopicStates.Concat(change.TopicStates));
         return new(
             summed.Rates.ToFrozenDictionary(count => (count.SignalId, count.StateId)),
             summed.Effects.ToFrozenDictionary(count => (count.FromStateId, count.MoveId, count.ToStateId), count => count.Count),
@@ -73,7 +105,9 @@ public sealed class LearnerModel
                 .GroupBy(count => (count.FromStateId, count.MoveId))
                 .ToFrozenDictionary(group => group.Key, group => group.Sum(count => count.Count)),
             summed.Rates,
-            summed.Effects);
+            summed.Effects,
+            summed.TopicLinks,
+            summed.TopicStates);
     }
 
     /// <summary>

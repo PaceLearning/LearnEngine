@@ -39,8 +39,10 @@ public sealed class HistoryReplayer
     /// history always gives the same belief.
     /// A history stamped with another vocabulary gives <see cref="OtherVocabulary"/>. A history that does not begin with
     /// a session start, has a second one, has a fade or clear margin outside 0 to 1, has a turn with a signal or a move
-    /// made that is not registered, or has what a turn learned that is not right after a turn, does not give one odds
-    /// per registered state adding up to 1, or adds counts that are not registered or below 0 gives <see cref="BrokenHistory"/>.
+    /// made that is not registered, has what a turn learned that is not right after a turn, does not give one odds
+    /// per registered state adding up to 1, or adds counts that are not registered or below 0, or has what was expected
+    /// of a turn kept twice before it, or not with one odds per registered state adding up to 1, one chance per
+    /// registered signal and a registered move, gives <see cref="BrokenHistory"/>.
     /// </summary>
     public OneOf<Belief, OtherVocabulary, BrokenHistory> Replay(ImmutableArray<HistoryEvent> history)
     {
@@ -81,6 +83,7 @@ public sealed class HistoryReplayer
         ImmutableArray<string> stateIds = [.. belief.All.Select(stateOdds => stateOdds.StateId)];
         var beliefs = ImmutableArray.CreateBuilder<Belief>(history.Length);
         beliefs.Add(belief);
+        var expectedSinceTurn = false;
         for (var index = 1; index < history.Length; index++)
         {
             var historyEvent = history[index];
@@ -107,10 +110,49 @@ public sealed class HistoryReplayer
                     || !(count.Count >= 0 && double.IsFinite(count.Count)));
                 if (badStep is not null)
                     return BrokenHistory.Create(index, $"What the turn learned adds a count from \"{badStep.FromStateId}\" to \"{badStep.ToStateId}\" after \"{badStep.MoveId}\" that is not registered or not 0 or more.");
+
+                var badLink = learned.Added.TopicLinks.FirstOrDefault(count => !(count.Count >= 0 && double.IsFinite(count.Count)));
+                if (badLink is not null)
+                    return BrokenHistory.Create(index, $"What the turn learned adds a count from \"{badLink.FromTopic}\" to \"{badLink.ToTopic}\" that is not 0 or more.");
+
+                var badTopicState = learned.Added.TopicStates.FirstOrDefault(count =>
+                    !stateIds.Contains(count.StateId)
+                    || !(count.Count >= 0 && double.IsFinite(count.Count)));
+                if (badTopicState is not null)
+                    return BrokenHistory.Create(index, $"What the turn learned adds a count of \"{badTopicState.StateId}\" on \"{badTopicState.Topic}\" that is not registered or not 0 or more.");
+            }
+
+            if (historyEvent is TurnExpected expected)
+            {
+                if (expectedSinceTurn)
+                    return BrokenHistory.Create(index, "What was expected of the next turn is kept twice before the turn.");
+
+                var unknownExpectedMove = expected.Expected.MoveId is not null && (moves is null || moves.Find(expected.Expected.MoveId).IsT1);
+                if (unknownExpectedMove)
+                    return BrokenHistory.Create(index, $"What was expected of the next turn assumes a move that is not registered: {expected.Expected.MoveId}.");
+
+                var oddsFit = expected.Expected.Odds.Select(stateOdds => stateOdds.StateId).SequenceEqual(stateIds)
+                    && expected.Expected.Odds.All(stateOdds => stateOdds.Odds >= 0 && stateOdds.Odds <= 1)
+                    && Math.Abs(expected.Expected.Odds.Sum(stateOdds => stateOdds.Odds) - 1) <= 1e-6;
+                if (!oddsFit)
+                    return BrokenHistory.Create(index, "What was expected of the next turn does not have one odds from 0 to 1 per registered state, in the order they were registered, adding up to 1.");
+
+                var signalsFit = expected.Expected.Signals.Select(chance => chance.SignalId).SequenceEqual(signals.All.Select(signal => signal.Id))
+                    && expected.Expected.Signals.All(chance => chance.Chance >= 0 && chance.Chance <= 1);
+                if (!signalsFit)
+                    return BrokenHistory.Create(index, "What was expected of the next turn does not have one chance from 0 to 1 per registered signal, in the order they were registered.");
+
+                var topicsFit = expected.Expected.Topics.All(chance => chance.Chance >= 0 && chance.Chance <= 1);
+                if (!topicsFit)
+                    return BrokenHistory.Create(index, "What was expected of the next turn has a topic chance that is not from 0 to 1.");
+
+                expectedSinceTurn = true;
             }
 
             if (historyEvent is LearnerTurn turn)
             {
+                expectedSinceTurn = false;
+
                 var unknownMove = turn.MoveMade is not null && (moves is null || moves.Find(turn.MoveMade).IsT1);
                 if (unknownMove)
                     return BrokenHistory.Create(index, $"The turn has a move made that is not registered: {turn.MoveMade}.");

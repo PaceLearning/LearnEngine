@@ -6,6 +6,7 @@ using LearnEngine.Core.Judging;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
+using LearnEngine.Core.Prediction;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.Topics;
 using OneOf;
@@ -29,6 +30,7 @@ public sealed class SessionEngine
     private readonly MoveJudge judge;
     private readonly MovePicker picker;
     private readonly ILearnerModelStore models;
+    private readonly Predictor predictor;
 
     private SessionEngine(
         OddsEngine engine,
@@ -41,8 +43,10 @@ public sealed class SessionEngine
         MoveCatalog moves,
         MoveJudge judge,
         MovePicker picker,
-        ILearnerModelStore models)
+        ILearnerModelStore models,
+        Predictor predictor)
     {
+        this.predictor = predictor;
         this.engine = engine;
         this.options = options;
         this.effects = effects;
@@ -68,12 +72,14 @@ public sealed class SessionEngine
         MoveCatalog moves,
         MoveJudge judge,
         MovePicker picker,
-        ILearnerModelStore models) =>
-        new(engine, options, effects, fingerprint, histories, replayer, signals, moves, judge, picker, models);
+        ILearnerModelStore models,
+        Predictor predictor) =>
+        new(engine, options, effects, fingerprint, histories, replayer, signals, moves, judge, picker, models, predictor);
 
     /// <summary>
     /// Starts the given learner's session: its history begins with a session start stamped with the registered
-    /// vocabulary and the fade and clear margin the app added the odds with. Gives the belief from the priors.
+    /// vocabulary and the fade and clear margin the app added the odds with, followed by what is expected of the first
+    /// turn from the priors with no move made, under the learner's model. Gives the belief from the priors.
     /// A session that already has a history, even one the store cannot read back, is kept as it is and gives
     /// <see cref="SessionAlreadyStarted"/>.
     /// </summary>
@@ -88,7 +94,10 @@ public sealed class SessionEngine
             return SessionAlreadyStarted.Create(learnerId, sessionId);
 
         var start = SessionStarted.Create(fingerprint.Value, options.Fade, options.ClearMargin);
+        var model = await models.Load(learnerId, cancellationToken);
+        var expected = predictor.Expect(engine.Start(), model, null, null);
         await histories.Append(learnerId, sessionId, start, cancellationToken);
+        await histories.Append(learnerId, sessionId, TurnExpected.Create(expected), cancellationToken);
         return SessionBelief.Create(engine.Start(), start.ClearMargin);
     }
 
@@ -100,9 +109,12 @@ public sealed class SessionEngine
     /// and moved with the turn's signals under the learner's own rates, the turn and the odds after it are kept in the
     /// session's history, the chance of each state after the turn is added to the learner's counts of every signal in
     /// that state, the chance of each step from a state before the turn to a state after it is added to the learner's
-    /// counts of the move made, the last
+    /// counts of the move made, a turn on a topic adds the chance of each state to that topic and one link from the
+    /// topic of the last turn that had one, the last
     /// picked move is judged and its judgment recorded in the learner's score when this turn gives one, and when the
     /// leading state is clear and no move is still being judged, a move is picked for it and kept in the history too.
+    /// Last, what is expected of the next turn, after the picked move or no move, is kept in the history and given back
+    /// with how unexpected this turn was under what was kept as expected of it.
     /// Report one turn of a session at a time, since two turns reported at once could both be kept before either is judged.
     /// Ids that are not registered give the unknown signals in the order reported, a session with no history gives
     /// <see cref="SessionNotStarted"/>, a history stamped with another vocabulary gives <see cref="OtherVocabulary"/>,
@@ -167,6 +179,14 @@ public sealed class SessionEngine
         var start = (SessionStarted)history[0];
         var model = await models.Load(learnerId, cancellationToken);
         var previous = replayer.Replay(history).AsT0;
+
+        // The turn is measured against what was kept as expected of it, since the model has moved on since. Only a
+        // report that stopped before keeping it leaves none, and then it is expected now, as with no move made.
+        var lastTopic = history.OfType<LearnerTurn>().LastOrDefault(earlier => earlier.Topic is not null)?.Topic;
+        var kept = history.LastOrDefault(historyEvent => historyEvent is LearnerTurn or TurnExpected) as TurnExpected;
+        var expectedOfTurn = kept?.Expected ?? predictor.Expect(previous, model, null, lastTopic);
+        var surprise = Predictor.Surprise(expectedOfTurn, reported);
+
         var predicted = engine.Predict(previous, model, moveMade);
         var belief = engine.Apply(predicted, model, reported).AsT0;
 
@@ -187,7 +207,16 @@ public sealed class SessionEngine
             predicted.All[index].Odds > 0
                 ? from.Odds * model.Effect(effects.For(from.StateId, moveMade), to.StateId) * to.Odds / predicted.All[index].Odds
                 : 0)));
-        var change = LearnerModelChange.Create(rates, steps);
+
+        // A turn on a topic adds the chance of each state after it to that topic, and one link from the topic of the
+        // last turn that had one, which is the same topic when the learner stayed on it.
+        IEnumerable<TopicStateCount> topicStates = topic is null
+            ? []
+            : belief.All.Select(stateOdds => TopicStateCount.Create(topic, stateOdds.StateId, stateOdds.Odds));
+        IEnumerable<TopicLinkCount> topicLinks = topic is null || lastTopic is null
+            ? []
+            : [TopicLinkCount.Create(lastTopic, topic, 1)];
+        var change = LearnerModelChange.Create(rates, steps, topicLinks, topicStates);
 
         // The turn and what was learned go in the history first, so a failure before the model is saved loses one turn
         // of learning instead of counting it twice when the histories are read again.
@@ -219,20 +248,26 @@ public sealed class SessionEngine
             judgment = MoveJudgment.Create(after.AsT0.Worked, score);
         }
 
+        // No pick while the leader is not clear, then none while a move is still being judged.
         var leader = belief.ClearLeader(start.ClearMargin);
-        if (leader.IsT1)
-            return TurnResult.Create(sessionBelief, leader.AsT1, judgment);
+        OneOf<PickedMove, NoClearLeader, MoveBeingJudged, NoMovesInState> pick = NoClearLeader.Create(belief.Margin);
+        if (leader.IsT0 && after.IsT1)
+            pick = after.AsT1;
 
-        if (after.IsT1)
-            return TurnResult.Create(sessionBelief, after.AsT1, judgment);
+        if (leader.IsT0 && !after.IsT1)
+        {
+            // The clear leader is always a registered state, so the picker never answers with an unknown one.
+            var picked = await picker.Pick(learnerId, leader.AsT0.StateId, cancellationToken);
+            pick = picked.IsT0 ? picked.AsT0 : picked.AsT1;
+            if (picked.IsT0)
+                await histories.Append(learnerId, sessionId, MovePicked.Create(leader.AsT0.StateId, picked.AsT0.Move.Id), cancellationToken);
+        }
 
-        var picked = await picker.Pick(learnerId, leader.AsT0.StateId, cancellationToken);
-        if (picked.IsT1)
-            return TurnResult.Create(sessionBelief, picked.AsT1, judgment);
-
-        // The clear leader is always a registered state, so the picker never answers with an unknown one.
-        await histories.Append(learnerId, sessionId, MovePicked.Create(leader.AsT0.StateId, picked.AsT0.Move.Id), cancellationToken);
-        return TurnResult.Create(sessionBelief, picked.AsT0, judgment);
+        // What the next turn is expected to be, after the picked move or no move, under the model with this turn added.
+        var moveNext = pick.IsT0 ? pick.AsT0.Move.Id : null;
+        var expected = predictor.Expect(belief, model.Add(change), moveNext, topic ?? lastTopic);
+        await histories.Append(learnerId, sessionId, TurnExpected.Create(expected), cancellationToken);
+        return TurnResult.Create(sessionBelief, pick, judgment, expected, surprise);
     }
 
     /// <summary>

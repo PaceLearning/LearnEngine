@@ -45,7 +45,7 @@ public sealed class LearnTools(
         UseStructuredContent = true,
         OutputSchemaType = typeof(SessionOpened))]
     [McpMeta("anthropic/alwaysLoad", true)]
-    [Description("Opens a learning session and returns its sessionId, the signal ids you may report, the topic ids the student has had before, and what to do first. Call it once when the student starts learning something, before you teach. Then call report_turn after every message the student sends.")]
+    [Description(ToolTexts.StartSession)]
     public async Task<CallToolResult> StartSession(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
@@ -81,13 +81,13 @@ public sealed class LearnTools(
         UseStructuredContent = true,
         OutputSchemaType = typeof(TurnReport))]
     [McpMeta("anthropic/alwaysLoad", true)]
-    [Description("Reports one student message as signal ids and returns what to do next. Call it after every message the student sends in a session, before you reply, even short ones like \"ok\". signals are ids from start_session that describe the message, never its words; send an empty list when none fit. turn counts the student's messages in this session, starting at 1. Send a topic id for what the message is about and the move you used last as lastMoveId. The result says why its move was chosen and what the next message will likely show and be about, for you only.")]
+    [Description(ToolTexts.ReportTurn)]
     public async Task<CallToolResult> ReportTurn(
-        [Description("The sessionId start_session returned.")] string sessionId,
-        [Description("The number of this student message in the session, starting at 1.")] int turn,
-        [Description("The ids of every signal that fits this message, from the list start_session returned. An empty list when none fit.")] string[] signals,
-        [Description("The id of the move you used in your last reply, if you used one.")] string? lastMoveId = null,
-        [Description("A short id for what this message is about, such as \"recursion.base_case\": letters, digits, '.', '_' or '-', at most 64. Use the same id each time the student is on the same topic, and reuse an id from the topics start_session returned when one fits.")] string? topic = null,
+        [Description(ToolTexts.SessionId)] string sessionId,
+        [Description(ToolTexts.Turn)] int turn,
+        [Description(ToolTexts.Signals)] string[] signals,
+        [Description(ToolTexts.LastMoveId)] string? lastMoveId = null,
+        [Description(ToolTexts.Topic)] string? topic = null,
         CancellationToken cancellationToken = default)
     {
         if (!FileNames.IsSafe(sessionId))
@@ -248,9 +248,9 @@ public sealed class LearnTools(
         OpenWorld = false,
         UseStructuredContent = true,
         OutputSchemaType = typeof(SessionEnded))]
-    [Description("Ends a learning session and returns how many of the student's messages were recorded. Call it when the student stops learning for now, and tell them the message it returns.")]
+    [Description(ToolTexts.EndSession)]
     public async Task<CallToolResult> EndSession(
-        [Description("The sessionId start_session returned.")] string sessionId,
+        [Description(ToolTexts.SessionId)] string sessionId,
         CancellationToken cancellationToken = default)
     {
         if (!FileNames.IsSafe(sessionId))

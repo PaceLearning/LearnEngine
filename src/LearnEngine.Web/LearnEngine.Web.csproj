@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Blazor Server is not Native AOT. The engine it hosts stays AOT clean in LearnEngine.Core. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+  </ItemGroup>
+
+  <!-- The stdio server's file stores, compliance log, tools and answers are used as they are, so both hosts keep the
+       same files and give the AI the same answers. -->
+  <ItemGroup>
+    <ProjectReference Include="..\LearnEngine.Core\LearnEngine.Core.csproj" />
+    <ProjectReference Include="..\LearnEngine.Teaching\LearnEngine.Teaching.csproj" />
+    <ProjectReference Include="..\LearnEngine.Mcp\LearnEngine.Mcp.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -9,5 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LearnEngine.Core.Tests/LearnEngine.Core.Tests.csproj" />
+    <Project Path="tests/LearnEngine.Mcp.Tests/LearnEngine.Mcp.Tests.csproj" />
   </Folder>
 </Solution>

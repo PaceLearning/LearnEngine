@@ -4,8 +4,9 @@ using System.Text.Json.Serialization;
 namespace LearnEngine.Mcp.Tools;
 
 /// <summary>
-/// The answer to report_turn: whether the student's state is clear, the move to make or how to teach without one,
-/// the state for the AI only, the turns that were skipped and the next call to make.
+/// The answer to report_turn: whether the student's state is clear, the move to make and why or how to teach without
+/// one, what the engine expects of the next message and the state, both for the AI only, the turns that were skipped
+/// and the next call to make.
 /// </summary>
 public sealed class TurnReport
 {
@@ -26,10 +27,23 @@ public sealed class TurnReport
     public MoveToMake? Move { get; }
 
     /// <summary>
+    /// Why the move was chosen, from what the engine learned about this student, such as
+    /// "For this learner, worked_example led from stuck to following 6 of 8 times.". For the AI only. Left out when
+    /// there is no move.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Why { get; }
+
+    /// <summary>
     /// What to do when there is no move, such as "Teach as you normally would.". Left out when there is a move.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Do { get; }
+
+    /// <summary>
+    /// The signals and topics the engine expects in the student's next message, for the AI only.
+    /// </summary>
+    public ExpectedNext Expect { get; }
 
     /// <summary>
     /// What the engine believes about the student, for the AI only.
@@ -46,12 +60,14 @@ public sealed class TurnReport
     /// </summary>
     public string Next { get; }
 
-    private TurnReport(int turn, bool clear, MoveToMake? move, string? @do, StateSummary state, ImmutableArray<int> missedTurns, string next)
+    private TurnReport(int turn, bool clear, MoveToMake? move, string? why, string? @do, ExpectedNext expect, StateSummary state, ImmutableArray<int> missedTurns, string next)
     {
         Turn = turn;
         Clear = clear;
         Move = move;
+        Why = why;
         Do = @do;
+        Expect = expect;
         State = state;
         MissedTurns = missedTurns;
         Next = next;
@@ -60,6 +76,6 @@ public sealed class TurnReport
     /// <summary>
     /// Creates the answer to one reported turn.
     /// </summary>
-    public static TurnReport Create(int turn, bool clear, MoveToMake? move, string? @do, StateSummary state, ImmutableArray<int> missedTurns, string next) =>
-        new(turn, clear, move, @do, state, missedTurns, next);
+    public static TurnReport Create(int turn, bool clear, MoveToMake? move, string? why, string? @do, ExpectedNext expect, StateSummary state, ImmutableArray<int> missedTurns, string next) =>
+        new(turn, clear, move, why, @do, expect, state, missedTurns, next);
 }

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
 using LearnEngine.Core.History;
+using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Sessions;
 using LearnEngine.Core.Signals;
@@ -24,6 +25,7 @@ public sealed class LearnTools(
     MoveCatalog moves,
     StateCatalog states,
     IHistoryStore histories,
+    ILearnerModelStore learnerModels,
     ComplianceLog compliance,
     TurnGate gate,
     ServerSettings settings)
@@ -43,7 +45,7 @@ public sealed class LearnTools(
         UseStructuredContent = true,
         OutputSchemaType = typeof(SessionOpened))]
     [McpMeta("anthropic/alwaysLoad", true)]
-    [Description("Opens a learning session and returns its sessionId, the signal ids you may report, and what to do first. Call it once when the student starts learning something, before you teach. Then call report_turn after every message the student sends.")]
+    [Description("Opens a learning session and returns its sessionId, the signal ids you may report, the topic ids the student has had before, and what to do first. Call it once when the student starts learning something, before you teach. Then call report_turn after every message the student sends.")]
     public async Task<CallToolResult> StartSession(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
@@ -55,9 +57,11 @@ public sealed class LearnTools(
 
         await compliance.Append(settings.LearnerId, sessionId, ComplianceEntry.Started(now), cancellationToken);
 
+        var model = await learnerModels.Load(settings.LearnerId, cancellationToken);
         var opened = SessionOpened.Create(
             sessionId,
             [.. signalCatalog.All.Select(signal => SignalChoice.Create(signal.Id, signal.Description))],
+            model.Topics,
             TeachNormally,
             $"After the student's next message, call report_turn with sessionId \"{sessionId}\" and turn 1, before you reply.");
         return ToolResults.Structured(opened);
@@ -77,13 +81,13 @@ public sealed class LearnTools(
         UseStructuredContent = true,
         OutputSchemaType = typeof(TurnReport))]
     [McpMeta("anthropic/alwaysLoad", true)]
-    [Description("Reports one student message as signal ids and returns what to do next. Call it after every message the student sends in a session, before you reply, even short ones like \"ok\". signals are ids from start_session that describe the message, never its words; send an empty list when none fit. turn counts the student's messages in this session, starting at 1.")]
+    [Description("Reports one student message as signal ids and returns what to do next. Call it after every message the student sends in a session, before you reply, even short ones like \"ok\". signals are ids from start_session that describe the message, never its words; send an empty list when none fit. turn counts the student's messages in this session, starting at 1. Send a topic id for what the message is about and the move you used last as lastMoveId. The result says why its move was chosen and what the next message will likely show and be about, for you only.")]
     public async Task<CallToolResult> ReportTurn(
         [Description("The sessionId start_session returned.")] string sessionId,
         [Description("The number of this student message in the session, starting at 1.")] int turn,
         [Description("The ids of every signal that fits this message, from the list start_session returned. An empty list when none fit.")] string[] signals,
         [Description("The id of the move you used in your last reply, if you used one.")] string? lastMoveId = null,
-        [Description("A short id for what this message is about, such as \"recursion.base_case\": letters, digits, '.', '_' or '-', at most 64. Use the same id each time the student is on the same topic.")] string? topic = null,
+        [Description("A short id for what this message is about, such as \"recursion.base_case\": letters, digits, '.', '_' or '-', at most 64. Use the same id each time the student is on the same topic, and reuse an id from the topics start_session returned when one fits.")] string? topic = null,
         CancellationToken cancellationToken = default)
     {
         if (!FileNames.IsSafe(sessionId))
@@ -167,8 +171,22 @@ public sealed class LearnTools(
             var highestAfter = Math.Max(highestBefore, turn);
 
             MoveToMake? move = null;
+            string? why = null;
             if (belief.IsClear && result.Pick.IsT0)
+            {
                 move = MoveToMake.Create(result.Pick.AsT0.Move.Id, result.Pick.AsT0.Move.Description);
+                why = result.Pick.AsT0.Why;
+            }
+
+            // Ties keep the order the app registered the signals in, and topics come most likely first already.
+            var expect = ExpectedNext.Create(
+                [.. result.Expected.Signals
+                    .OrderByDescending(signal => signal.Chance)
+                    .Take(5)
+                    .Select(signal => ExpectedSignal.Create(signal.SignalId, Math.Round(signal.Chance, 2)))],
+                [.. result.Expected.Topics
+                    .Take(5)
+                    .Select(topicChance => ExpectedTopic.Create(topicChance.Topic, Math.Round(topicChance.Chance, 2)))]);
 
             var leader = belief.Leader;
             var runnerUp = belief.RunnerUp;
@@ -209,7 +227,7 @@ public sealed class LearnTools(
             if (move is null)
                 teach = TeachNormally;
 
-            var report = TurnReport.Create(turn, belief.IsClear, move, teach, StateSummary.Create(summary, confidence), missed, next);
+            var report = TurnReport.Create(turn, belief.IsClear, move, why, teach, expect, StateSummary.Create(summary, confidence), missed, next);
             return ToolResults.Structured(report);
         }
         finally

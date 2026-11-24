@@ -3,7 +3,8 @@ using System.Collections.Immutable;
 namespace LearnEngine.Mcp.Tools;
 
 /// <summary>
-/// The answer to start_session: the new session's id, the signal ids the AI may report and what to do first.
+/// The answer to start_session: the new session's id, the signal ids the AI may report, the topic ids the student has
+/// had before and what to do first.
 /// </summary>
 public sealed class SessionOpened
 {
@@ -18,6 +19,12 @@ public sealed class SessionOpened
     public ImmutableArray<SignalChoice> Signals { get; }
 
     /// <summary>
+    /// Every topic id this student has had before, in the order first seen, so the AI sends the same id when the
+    /// student is on the same topic instead of making a new one.
+    /// </summary>
+    public ImmutableArray<string> Topics { get; }
+
+    /// <summary>
     /// What to do before the first student message is reported.
     /// </summary>
     public string Do { get; }
@@ -27,10 +34,11 @@ public sealed class SessionOpened
     /// </summary>
     public string Next { get; }
 
-    private SessionOpened(string sessionId, ImmutableArray<SignalChoice> signals, string @do, string next)
+    private SessionOpened(string sessionId, ImmutableArray<SignalChoice> signals, ImmutableArray<string> topics, string @do, string next)
     {
         SessionId = sessionId;
         Signals = signals;
+        Topics = topics;
         Do = @do;
         Next = next;
     }
@@ -38,6 +46,6 @@ public sealed class SessionOpened
     /// <summary>
     /// Creates the answer for the given session.
     /// </summary>
-    public static SessionOpened Create(string sessionId, ImmutableArray<SignalChoice> signals, string @do, string next) =>
-        new(sessionId, signals, @do, next);
+    public static SessionOpened Create(string sessionId, ImmutableArray<SignalChoice> signals, ImmutableArray<string> topics, string @do, string next) =>
+        new(sessionId, signals, topics, @do, next);
 }

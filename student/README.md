@@ -1,6 +1,6 @@
 # Learn with LearnEngine
 
-LearnEngine makes Claude a tutor that notices how you learn and changes how it teaches you. It runs on your own computer, and what it learns about you stays there.
+LearnEngine makes Claude a tutor that notices how you learn and changes how it teaches you. It guesses what you will need next and what you will likely ask next, and learns from how right it was. It runs on your own computer, and what it learns about you stays there. It keeps signal ids and short topic ids, never your words.
 
 ## Set it up
 

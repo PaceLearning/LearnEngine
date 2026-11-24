@@ -9,7 +9,7 @@ LearnEngine tracks how the student is learning so you can teach them well. It on
 
 ## 1. Start a session
 
-When the student starts learning something, call `start_session` before you teach. Call it once. Keep the `sessionId` it returns. Its `signals` list holds the only signal ids you may report, each with its meaning. Then teach as you normally would.
+When the student starts learning something, call `start_session` before you teach. Call it once. Keep the `sessionId` it returns. Its `signals` list holds the only signal ids you may report, each with its meaning. Its `topics` list holds the topic ids the student has had before. Then teach as you normally would.
 
 ## 2. Report every message before you reply
 
@@ -19,13 +19,15 @@ After every message the student sends in that session, call `report_turn` before
 - `turn`: counts the student's messages in this session from 1. The first message after `start_session` is turn 1, the next is turn 2, and so on. The `next` field tells you the turn to send.
 - `signals`: the ids from the `start_session` list that describe the message. Send every id that fits. If none fits, send an empty list. Never send the student's words or ids that are not on the list.
 - `lastMoveId`: the id of the move you used in your last reply, if you used one.
+- `topic`: a short id for what the message is about, such as `recursion.base_case`: letters, digits, `.`, `_` or `-`, at most 64. Send the same id each time the student is on the same topic. Reuse an id from the `topics` list of `start_session` when one fits.
 
 ## 3. Read the result before you reply
 
-- `clear` true: make the move in `move`. Its `do` says what to do in this reply. Once you use it, send its `id` as `lastMoveId` in the next report.
+- `clear` true: make the move in `move`. Its `do` says what to do in this reply. Once you use it, send its `id` as `lastMoveId` in the next report. `why` says why it was chosen.
 - `clear` false: `move` is null and `do` says to teach as you normally would. Do that.
 - Either way, always answer what the student asks for outright.
-- `state` is for you only.
+- `expect` lists the signals and topics the next message will likely have, with their chances. Be ready for them.
+- `state`, `why` and `expect` are for you only.
 - `missedTurns` lists the student messages you did not report. Report every message from now on.
 - `next` names your next call and the turn to send. Follow it.
 - If `next` says no session was open and a new one was opened, go on with the same `sessionId`.

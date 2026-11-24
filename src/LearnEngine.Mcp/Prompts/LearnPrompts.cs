@@ -22,8 +22,8 @@ public sealed class LearnPrompts
             I want to learn {about} with you as my tutor.
 
             1. Call start_session now, before you teach me anything, and keep the sessionId.
-            2. After every message I send, call report_turn before you reply, even when I only say "ok". Count my messages from 1 as turn, and send only signal ids from the list start_session gave you. Never send my words.
-            3. Read the result before you reply. When clear is true, make its move. When it is false, teach as you normally would. Always answer what I ask for outright.
+            2. After every message I send, call report_turn before you reply, even when I only say "ok". Count my messages from 1 as turn, and send only signal ids from the list start_session gave you. Never send my words. Send the move you used last as lastMoveId, and a short topic id for what my message is about, reusing the topic ids start_session gave you when one fits.
+            3. Read the result before you reply. When clear is true, make its move. When it is false, teach as you normally would. Always answer what I ask for outright. Use expect to be ready for what I will likely ask next.
             4. Never show me odds, states, scores or labels about me.
             5. When I say I am done, call end_session and tell me how many of my messages were recorded.
 

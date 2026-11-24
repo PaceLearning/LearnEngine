@@ -3,6 +3,7 @@ using LearnEngine.Core.Bandit;
 using LearnEngine.Core.Guide;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Judging;
+using LearnEngine.Core.Learning;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
@@ -180,10 +181,39 @@ public static class RegistrationExtension
                 throw new ArgumentOutOfRangeException(nameof(clearMargin), clearMargin, "The clear margin must be from 0 to 1.");
 
             services.AddSingleton(OddsOptions.Create(fade, clearMargin));
+            // The rate weight is read when the engine is first resolved, so AddLearning may come after this call.
             services.AddSingleton(provider => OddsEngine.Create(
                 provider.GetRequiredService<StateCatalog>(),
                 provider.GetRequiredService<SignalCatalog>(),
-                provider.GetRequiredService<LikelihoodTable>()));
+                provider.GetRequiredService<LikelihoodTable>(),
+                provider.GetService<LearningOptions>()?.RateWeight ?? LearningOptions.DefaultRateWeight));
+            return services;
+        }
+
+        /// <summary>
+        /// Lets the engine learn how each learner learns: after every turn, the chance the learner was in each state is
+        /// added to their own counts of every signal in that state, as shown or not shown, and their rates move away
+        /// from the shared ones. The rate weight is how many turns the shared rate of a signal counts as, so a higher
+        /// weight makes a learner's own counts move it more slowly.
+        /// It registers the <see cref="LearningOptions"/> and an <see cref="InMemoryLearnerModelStore"/> as the
+        /// <see cref="ILearnerModelStore"/>. To keep learner models somewhere else, register your own
+        /// <see cref="ILearnerModelStore"/> before this call and it is kept.
+        /// A rate weight that is not above 0 and finite, or a second call, throws here so a wrong setup stops the app at startup.
+        /// </summary>
+        public IServiceCollection AddLearning(double rateWeight = LearningOptions.DefaultRateWeight)
+        {
+            var added = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(LearningOptions) && !descriptor.IsKeyedService);
+            if (added)
+                throw new InvalidOperationException("The learning is added twice. Call AddLearning once.");
+
+            // Written so a NaN fails too, which a plain bound check would let through.
+            var weightInRange = rateWeight > 0 && double.IsFinite(rateWeight);
+            if (!weightInRange)
+                throw new ArgumentOutOfRangeException(nameof(rateWeight), rateWeight, "The rate weight must be above 0 and finite.");
+
+            services.AddSingleton(LearningOptions.Create(rateWeight));
+            services.TryAddSingleton<ILearnerModelStore>(_ => InMemoryLearnerModelStore.Create());
             return services;
         }
 
@@ -212,10 +242,12 @@ public static class RegistrationExtension
                 provider.GetRequiredService<StateCatalog>(),
                 provider.GetRequiredService<LikelihoodTable>(),
                 provider.GetService<MoveCatalog>(),
-                provider.GetService<OutcomeSignals>()));
+                provider.GetService<OutcomeSignals>(),
+                provider.GetService<LearningOptions>()?.RateWeight ?? LearningOptions.DefaultRateWeight));
             services.AddSingleton(provider => HistoryReplayer.Create(
                 provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<VocabularyFingerprint>(),
+                provider.GetRequiredService<SignalCatalog>(),
                 provider.GetService<MoveCatalog>()));
             services.TryAddSingleton<IHistoryStore>(_ => InMemoryHistoryStore.Create());
             return services;
@@ -337,7 +369,6 @@ public static class RegistrationExtension
                 [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
             services.TryAddSingleton(provider => MoveJudge.Create(
                 provider.GetRequiredService<HistoryReplayer>(),
-                provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<OutcomeSignals>(),
                 provider.GetRequiredService<AllowedMoveCatalog>(),
                 provider.GetRequiredService<IHistoryStore>(),
@@ -398,7 +429,6 @@ public static class RegistrationExtension
                 [.. provider.GetServices<FailureSignalRegistration>().Select(registration => registration.SignalId)]));
             services.TryAddSingleton(provider => MoveJudge.Create(
                 provider.GetRequiredService<HistoryReplayer>(),
-                provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<OutcomeSignals>(),
                 provider.GetRequiredService<AllowedMoveCatalog>(),
                 provider.GetRequiredService<IHistoryStore>(),
@@ -409,11 +439,12 @@ public static class RegistrationExtension
         /// <summary>
         /// Registers the <see cref="SessionEngine"/>, the one service the app or an MCP host calls to start a session,
         /// report each learner turn and read the belief. Call it last, after the vocabulary: the signals, states,
-        /// likelihoods, odds, history, moves allowed in each state and the success and failure signals.
+        /// likelihoods, odds, history, moves allowed in each state, the success and failure signals and the learning.
         /// It also registers the <see cref="VocabularyGuide"/> the AI reads, written once from the vocabulary when first resolved.
-        /// It takes no options of its own, because the fade and clear margin are given to AddOdds and the stores are
-        /// the ones registered by AddHistory and AddMoveFor.
-        /// No success or failure signal before this call, or a second call, throws here so a wrong setup stops the app at startup.
+        /// It takes no options of its own, because the fade and clear margin are given to AddOdds, the rate weight to
+        /// AddLearning, and the stores are the ones registered by AddHistory, AddMoveFor and AddLearning.
+        /// No success or failure signal or no AddLearning before this call, or a second call, throws here so a wrong
+        /// setup stops the app at startup.
         /// </summary>
         public IServiceCollection AddLearnEngine()
         {
@@ -429,6 +460,11 @@ public static class RegistrationExtension
             if (!judgeAdded)
                 throw new InvalidOperationException("No success or failure signal is added, so no picked move can be judged. Add them with AddSuccessSignal or AddFailureSignal before AddLearnEngine.");
 
+            var learningAdded = services.Any(descriptor =>
+                descriptor.ServiceType == typeof(LearningOptions) && !descriptor.IsKeyedService);
+            if (!learningAdded)
+                throw new InvalidOperationException("The learning is not added, so the engine cannot learn how the learner learns. Add it with AddLearning before AddLearnEngine.");
+
             services.AddSingleton(provider => SessionEngine.Create(
                 provider.GetRequiredService<OddsEngine>(),
                 provider.GetRequiredService<OddsOptions>(),
@@ -438,7 +474,8 @@ public static class RegistrationExtension
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<MoveCatalog>(),
                 provider.GetRequiredService<MoveJudge>(),
-                provider.GetRequiredService<MovePicker>()));
+                provider.GetRequiredService<MovePicker>(),
+                provider.GetRequiredService<ILearnerModelStore>()));
             services.AddSingleton(provider => VocabularyGuide.Create(
                 provider.GetRequiredService<SignalCatalog>(),
                 provider.GetRequiredService<StateCatalog>(),

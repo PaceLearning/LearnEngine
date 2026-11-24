@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LearnEngine.Core.Odds;
 
 /// <summary>
@@ -15,7 +17,9 @@ public sealed record StateOdds
     /// </summary>
     public double Odds { get; }
 
-    private StateOdds(string stateId, double odds)
+    // Internal, not private, so the source generated JSON reader of the history can call it.
+    [JsonConstructor]
+    internal StateOdds(string stateId, double odds)
     {
         StateId = stateId;
         Odds = odds;

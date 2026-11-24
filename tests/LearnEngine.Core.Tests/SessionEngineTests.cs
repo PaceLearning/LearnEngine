@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 using LearnEngine.Core.History;
+using LearnEngine.Core.Learning;
+using LearnEngine.Core.Odds;
 using LearnEngine.Core.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using OneOf;
@@ -146,7 +148,74 @@ public sealed class SessionEngineTests
         Assert.Collection(history,
             historyEvent => Assert.IsType<SessionStarted>(historyEvent),
             historyEvent => Assert.IsType<LearnerTurn>(historyEvent),
+            historyEvent => Assert.IsType<TurnLearned>(historyEvent),
             historyEvent => Assert.Equal(One, Assert.IsType<MovePicked>(historyEvent).MoveId));
+    }
+
+    [Fact]
+    public async Task ReportTurn_NewLearner_GivesTheOddsOfTheSharedRates()
+    {
+        using var provider = Create();
+        var sessions = provider.GetRequiredService<SessionEngine>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+        await sessions.StartSession(Learner, Session, CancellationToken.None);
+
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
+
+        var today = engine.Apply(engine.Fade(engine.Start(), OddsOptions.DefaultFade), LearnerModel.Empty, [LeansFirst]).AsT0;
+        Assert.Equal(today.All[0].Odds, reported.AsT0.Belief.All[0].Odds, 10);
+        Assert.Equal(today.All[1].Odds, reported.AsT0.Belief.All[1].Odds, 10);
+    }
+
+    [Fact]
+    public async Task ReportTurn_AddsTheOddsAfterTheTurnToTheLearnersCountsAndKeepsThem()
+    {
+        using var provider = Create();
+        var sessions = provider.GetRequiredService<SessionEngine>();
+        var histories = provider.GetRequiredService<IHistoryStore>();
+        var models = provider.GetRequiredService<ILearnerModelStore>();
+        await sessions.StartSession(Learner, Session, CancellationToken.None);
+
+        var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
+
+        var odds = reported.AsT0.Belief.All;
+        var model = await models.Load(Learner, CancellationToken.None);
+        var shownInFirst = Assert.Single(model.Rates, count => count.SignalId == LeansFirst && count.StateId == First);
+        var notShownInSecond = Assert.Single(model.Rates, count => count.SignalId == LeansSecond && count.StateId == Second);
+        Assert.Equal(odds[0].Odds, shownInFirst.Shown, 10);
+        Assert.Equal(0, shownInFirst.NotShown, 10);
+        Assert.Equal(0, notShownInSecond.Shown, 10);
+        Assert.Equal(odds[1].Odds, notShownInSecond.NotShown, 10);
+        Assert.Equal(4 * 2, model.Rates.Length);
+
+        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var learned = Assert.IsType<TurnLearned>(history[2]);
+        Assert.Equal(odds.Select(stateOdds => stateOdds.Odds), learned.Odds.Select(stateOdds => stateOdds.Odds));
+        Assert.Equal(model.Rates.Length, learned.Added.Rates.Length);
+    }
+
+    [Fact]
+    public async Task ReportTurn_SecondTurn_UsesTheRatesLearnedFromTheFirst()
+    {
+        using var provider = Create();
+        var sessions = provider.GetRequiredService<SessionEngine>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+        var histories = provider.GetRequiredService<IHistoryStore>();
+        var replayer = provider.GetRequiredService<HistoryReplayer>();
+        var models = provider.GetRequiredService<ILearnerModelStore>();
+        await sessions.StartSession(Learner, Session, CancellationToken.None);
+        await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None);
+        var model = await models.Load(Learner, CancellationToken.None);
+        var afterFirst = replayer.Replay((await histories.Load(Learner, Session, CancellationToken.None)).AsT0).AsT0;
+
+        var second = await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None);
+        var replayed = await sessions.GetBelief(Learner, Session, CancellationToken.None);
+
+        var learnt = engine.Apply(engine.Fade(afterFirst, OddsOptions.DefaultFade), model, [LeansSecond]).AsT0;
+        var shared = engine.Apply(engine.Fade(afterFirst, OddsOptions.DefaultFade), LearnerModel.Empty, [LeansSecond]).AsT0;
+        Assert.Equal(learnt.All[0].Odds, second.AsT0.Belief.All[0].Odds, 10);
+        Assert.NotEqual(shared.All[0].Odds, second.AsT0.Belief.All[0].Odds, 10);
+        Assert.Equal(second.AsT0.Belief.All[0].Odds, replayed.AsT0.All[0].Odds, 10);
     }
 
     [Fact]

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using LearnEngine.Core.History;
+using LearnEngine.Core.Learning;
+using LearnEngine.Core.Odds;
 using LearnEngine.Core.Topics;
 using Xunit;
 
@@ -85,6 +87,23 @@ public sealed class HistoryEventJsonTests
     }
 
     [Fact]
+    public void Write_TurnLearned_ReadsBackTheSame()
+    {
+        var learned = TurnLearned.Create(
+            [StateOdds.Create("stuck", 0.75), StateOdds.Create("following", 0.25)],
+            LearnerModelChange.Create([RateCount.Create("asks.for_help", "stuck", 0.75, 0)]));
+
+        var line = HistoryEventJson.Write(learned);
+        var read = HistoryEventJson.Read(line);
+
+        Assert.Equal("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":0.75},{"state_id":"following","odds":0.25}],"added":{"rates":[{"signal_id":"asks.for_help","state_id":"stuck","shown":0.75,"not_shown":0}]}}""", line);
+        var readBack = Assert.IsType<TurnLearned>(read.AsT0);
+        Assert.Equal(["stuck", "following"], readBack.Odds.Select(stateOdds => stateOdds.StateId));
+        Assert.Equal(0.75, readBack.Odds[0].Odds);
+        Assert.Equal(RateCount.Create("asks.for_help", "stuck", 0.75, 0), Assert.Single(readBack.Added.Rates));
+    }
+
+    [Fact]
     public void Write_MovePicked_ReadsBackTheSame()
     {
         var line = HistoryEventJson.Write(MovePicked.Create("model_clash", "ask_their_picture"));
@@ -127,6 +146,9 @@ public sealed class HistoryEventJsonTests
     [InlineData("""{"event":"learner_turn","signal_ids":[null]}""")]
     [InlineData("""{"event":"learner_turn","signal_ids":[],"topic":"not valid"}""")]
     [InlineData("""{"event":"learner_turn","signal_ids":[],"move_made":""}""")]
+    [InlineData("""{"event":"turn_learned","odds":[null],"added":{"rates":[]}}""")]
+    [InlineData("""{"event":"turn_learned","odds":[],"added":{"rates":[null]}}""")]
+    [InlineData("""{"event":"turn_learned","odds":[]}""")]
     [InlineData("""{"event":"move_picked","state_id":null,"move_id":"keep_going"}""")]
     [InlineData("not json")]
     [InlineData("null")]

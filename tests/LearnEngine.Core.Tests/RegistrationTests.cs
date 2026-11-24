@@ -137,6 +137,41 @@ public sealed class RegistrationTests
     }
 
     [Fact]
+    public void AddLearnEngine_NoLearning_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddSignal("a", "Signal a.").AddSignal("b", "Signal b.");
+        services.AddStates(states => states.AddState("x", "State x.", 1));
+        services.AddLikelihoods(rates => rates.AddRates("a", ("x", 0.5)).AddRates("b", ("x", 0.5)));
+        services.AddOdds().AddHistory();
+        services.AddMove("m", "Move m.").AddMoveFor("x", "m", 1, 2);
+        services.AddSuccessSignal("a").AddFailureSignal("b");
+
+        Assert.Throws<InvalidOperationException>(() => services.AddLearnEngine());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void AddLearning_RateWeightNotAboveZeroOrNotFinite_Throws(double rateWeight)
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => services.AddLearning(rateWeight));
+    }
+
+    [Fact]
+    public void AddLearning_Twice_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddLearning();
+
+        Assert.Throws<InvalidOperationException>(() => services.AddLearning());
+    }
+
+    [Fact]
     public void Find_UnknownIds_GiveTheUnknownAnswers()
     {
         using var provider = Create();

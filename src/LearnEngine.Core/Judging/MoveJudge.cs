@@ -17,7 +17,6 @@ public sealed class MoveJudge
     public const int JudgingTurns = 2;
 
     private readonly HistoryReplayer replayer;
-    private readonly OddsEngine engine;
     private readonly OutcomeSignals outcomes;
     private readonly AllowedMoveCatalog allowedMoves;
     private readonly IHistoryStore histories;
@@ -25,14 +24,12 @@ public sealed class MoveJudge
 
     private MoveJudge(
         HistoryReplayer replayer,
-        OddsEngine engine,
         OutcomeSignals outcomes,
         AllowedMoveCatalog allowedMoves,
         IHistoryStore histories,
         IScoreStore scores)
     {
         this.replayer = replayer;
-        this.engine = engine;
         this.outcomes = outcomes;
         this.allowedMoves = allowedMoves;
         this.histories = histories;
@@ -42,12 +39,11 @@ public sealed class MoveJudge
     // Internal so a judge only comes from registration, with the registered vocabulary, outcome signals and allowed moves.
     internal static MoveJudge Create(
         HistoryReplayer replayer,
-        OddsEngine engine,
         OutcomeSignals outcomes,
         AllowedMoveCatalog allowedMoves,
         IHistoryStore histories,
         IScoreStore scores) =>
-        new(replayer, engine, outcomes, allowedMoves, histories, scores);
+        new(replayer, outcomes, allowedMoves, histories, scores);
 
     /// <summary>
     /// Replays the history and says what is due for the last picked move. It reads nothing but the history and the
@@ -65,7 +61,7 @@ public sealed class MoveJudge
     /// </summary>
     public OneOf<MoveJudged, MoveBeingJudged, NothingToJudge, OtherVocabulary, BrokenHistory> Judge(ImmutableArray<HistoryEvent> history)
     {
-        var replayed = replayer.Replay(history);
+        var replayed = replayer.ReplayEach(history);
         if (replayed.IsT1)
             return replayed.AsT1;
 
@@ -74,7 +70,7 @@ public sealed class MoveJudge
 
         // The replay checked the history begins with a session start in range and every turn has registered signals.
         var start = (SessionStarted)history[0];
-        var belief = engine.Start();
+        var beliefs = replayed.AsT0;
         MovePicked? open = null;
         var turnsSeen = 0;
         MoveJudged? due = null;
@@ -82,12 +78,14 @@ public sealed class MoveJudge
         {
             var historyEvent = history[index];
 
+            // The belief after the event, the same one the replay gives, so a turn whose odds were kept is judged by them.
+            var belief = beliefs[index];
+
             if (historyEvent is LearnerTurn turn)
             {
                 if (due is not null)
                     return BrokenHistory.Create(index, $"The judgment of the move \"{due.MoveId}\" in \"{due.StateId}\" is not recorded before the next turn.");
 
-                belief = engine.Apply(engine.Fade(belief, start.Fade), turn.SignalIds).AsT0;
                 if (open is null)
                     continue;
 

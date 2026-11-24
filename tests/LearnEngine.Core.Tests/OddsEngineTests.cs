@@ -1,3 +1,4 @@
+using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Registration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,7 +34,7 @@ public sealed class OddsEngineTests
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
 
-        var applied = engine.Apply(engine.Start(), [LeansFirst]);
+        var applied = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]);
 
         // leans.first showed up and leans.second did not. The two outcome signals have the same rate in both states,
         // so they cancel out when the odds are rescaled.
@@ -45,12 +46,30 @@ public sealed class OddsEngineTests
     }
 
     [Fact]
+    public void Apply_LearnerCounts_UsesTheLearnersRates()
+    {
+        using var provider = Create();
+        var engine = provider.GetRequiredService<OddsEngine>();
+
+        // 20 turns in the first state that did not show leans.first, on top of its shared 0.5 counted as 20 turns.
+        var model = LearnerModel.Create([RateCount.Create(LeansFirst, First, 0, 20)]);
+        var learnerRate = (0.5 * LearningOptions.DefaultRateWeight + 0) / (LearningOptions.DefaultRateWeight + 0 + 20);
+
+        var applied = engine.Apply(engine.Start(), model, [LeansFirst]);
+
+        var first = FirstPrior * learnerRate * (1 - 0.2);
+        var second = SecondPrior * 0.1 * (1 - 0.4);
+        Assert.Equal(0.25, learnerRate, Precision);
+        Assert.Equal(first / (first + second), applied.AsT0.All[0].Odds, Precision);
+    }
+
+    [Fact]
     public void Apply_NoSignals_StillMovesTheOdds()
     {
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
 
-        var applied = engine.Apply(engine.Start(), []);
+        var applied = engine.Apply(engine.Start(), LearnerModel.Empty, []);
 
         var first = FirstPrior * (1 - 0.5) * (1 - 0.2);
         var second = SecondPrior * (1 - 0.1) * (1 - 0.4);
@@ -63,8 +82,8 @@ public sealed class OddsEngineTests
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
 
-        var once = engine.Apply(engine.Start(), [LeansFirst]).AsT0;
-        var twice = engine.Apply(engine.Start(), [LeansFirst, LeansFirst]).AsT0;
+        var once = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
+        var twice = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst, LeansFirst]).AsT0;
 
         Assert.Equal(once.All[0].Odds, twice.All[0].Odds, Precision);
     }
@@ -75,7 +94,7 @@ public sealed class OddsEngineTests
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
 
-        var applied = engine.Apply(engine.Start(), ["not.a.signal", LeansFirst, "another"]);
+        var applied = engine.Apply(engine.Start(), LearnerModel.Empty, ["not.a.signal", LeansFirst, "another"]);
 
         Assert.True(applied.IsT1);
         Assert.Equal(["not.a.signal", "another"], applied.AsT1.Select(unknown => unknown.Id));
@@ -86,7 +105,7 @@ public sealed class OddsEngineTests
     {
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
-        var belief = engine.Apply(engine.Start(), [LeansFirst]).AsT0;
+        var belief = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
 
         var faded = engine.Fade(belief, 0);
 
@@ -99,7 +118,7 @@ public sealed class OddsEngineTests
     {
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
-        var belief = engine.Apply(engine.Start(), [LeansFirst]).AsT0;
+        var belief = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
 
         var faded = engine.Fade(belief, 1);
 
@@ -112,7 +131,7 @@ public sealed class OddsEngineTests
     {
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
-        var belief = engine.Apply(engine.Start(), [LeansFirst]).AsT0;
+        var belief = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
 
         var faded = engine.Fade(belief, 0.25);
 

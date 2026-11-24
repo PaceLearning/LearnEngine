@@ -15,10 +15,11 @@ public static class RegistrationExtension
         /// <summary>
         /// Adds the whole teaching vocabulary in the order the engine asks for: the signals, the states with their
         /// priors, the rate of every signal in every state, the odds with the default fade and clear margin, the
-        /// history, the moves allowed in each state with their starting counts, and the success and failure signals.
+        /// history, the learning with the default rate weight, the moves allowed in each state with their starting
+        /// counts, and the success and failure signals.
         /// The rates and the starting counts are guesses, written before any session was recorded, and should be
         /// replaced by numbers measured from real histories.
-        /// Register the history and score stores before this call so they are kept instead of the in-memory ones.
+        /// Register the history, score and learner model stores before this call so they are kept instead of the in-memory ones.
         /// Changing any id, description, prior, rate or outcome signal changes the vocabulary fingerprint, so sessions
         /// started before the change can no longer be continued.
         /// </summary>
@@ -67,9 +68,11 @@ public static class RegistrationExtension
                 .AddRates("says.it_clicked", ("overloaded", 0.01), ("model_clash", 0.04), ("following", 0.10), ("stuck", 0.04), ("eager", 0.05))
                 .AddRates("asks.to_try", ("overloaded", 0.01), ("model_clash", 0.02), ("following", 0.06), ("stuck", 0.02), ("eager", 0.25)));
 
+            // The shared rates count as 20 messages of evidence before a student's own counts move them. A guess too.
             services
                 .AddOdds()
-                .AddHistory();
+                .AddHistory()
+                .AddLearning();
 
             services
                 .AddMove("keep_going", "Go on to the next small step at the same pace, and check in with one short question.")

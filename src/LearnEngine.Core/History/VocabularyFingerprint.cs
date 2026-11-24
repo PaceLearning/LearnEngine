@@ -11,7 +11,7 @@ namespace LearnEngine.Core.History;
 
 /// <summary>
 /// A short hash of the whole vocabulary the app registered: every signal, state, prior, rate and move, with their descriptions,
-/// and which signals show a move worked or failed, all in the order they were registered.
+/// which signals show a move worked or failed, all in the order they were registered, and the rate weight of the learning.
 /// Every session is stamped with it, so a history is never replayed under another vocabulary.
 /// </summary>
 public sealed class VocabularyFingerprint
@@ -29,7 +29,8 @@ public sealed class VocabularyFingerprint
         StateCatalog states,
         LikelihoodTable likelihoods,
         MoveCatalog? moves,
-        OutcomeSignals? outcomes)
+        OutcomeSignals? outcomes,
+        double rateWeight)
     {
         // Written as JSON so ids and descriptions are escaped and numbers are written the same way in every culture,
         // so no two vocabularies can give the same text.
@@ -92,6 +93,10 @@ public sealed class VocabularyFingerprint
             foreach (var signalId in outcomes?.Failure ?? [])
                 writer.WriteStringValue(signalId);
             writer.WriteEndArray();
+
+            // Learning changes what a session keeps after each turn, so a session kept before it, or under another
+            // weight, is never continued with it.
+            writer.WriteNumber("rate_weight", rateWeight);
 
             writer.WriteEndObject();
         }

@@ -1,3 +1,4 @@
+using LearnEngine.Core.Learning;
 using LearnEngine.Core.Registration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -26,9 +27,12 @@ internal static class TestVocabulary
     /// <summary>
     /// Registers the vocabulary and the engine. Anything registered by <paramref name="before"/> comes first, such as a
     /// store kept across two vocabularies. With <paramref name="otherDescription"/> the first signal reads differently,
-    /// which gives the same vocabulary another fingerprint.
+    /// which gives the same vocabulary another fingerprint, and so does another <paramref name="rateWeight"/>.
     /// </summary>
-    public static ServiceProvider Create(Action<IServiceCollection>? before = null, string otherDescription = "")
+    public static ServiceProvider Create(
+        Action<IServiceCollection>? before = null,
+        string otherDescription = "",
+        double rateWeight = LearningOptions.DefaultRateWeight)
     {
         var services = new ServiceCollection();
         before?.Invoke(services);
@@ -52,7 +56,8 @@ internal static class TestVocabulary
 
         services
             .AddOdds()
-            .AddHistory();
+            .AddHistory()
+            .AddLearning(rateWeight);
 
         services
             .AddMove(One, "The first move.")

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using LearnEngine.Core.Bandit;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Judging;
+using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Signals;
@@ -25,6 +26,7 @@ public sealed class SessionEngine
     private readonly MoveCatalog moves;
     private readonly MoveJudge judge;
     private readonly MovePicker picker;
+    private readonly ILearnerModelStore models;
 
     private SessionEngine(
         OddsEngine engine,
@@ -35,7 +37,8 @@ public sealed class SessionEngine
         SignalCatalog signals,
         MoveCatalog moves,
         MoveJudge judge,
-        MovePicker picker)
+        MovePicker picker,
+        ILearnerModelStore models)
     {
         this.engine = engine;
         this.options = options;
@@ -46,6 +49,7 @@ public sealed class SessionEngine
         this.moves = moves;
         this.judge = judge;
         this.picker = picker;
+        this.models = models;
     }
 
     // Internal so an engine only comes from registration, with the registered vocabulary, options and stores.
@@ -58,8 +62,9 @@ public sealed class SessionEngine
         SignalCatalog signals,
         MoveCatalog moves,
         MoveJudge judge,
-        MovePicker picker) =>
-        new(engine, options, fingerprint, histories, replayer, signals, moves, judge, picker);
+        MovePicker picker,
+        ILearnerModelStore models) =>
+        new(engine, options, fingerprint, histories, replayer, signals, moves, judge, picker, models);
 
     /// <summary>
     /// Starts the given learner's session: its history begins with a session start stamped with the registered
@@ -86,7 +91,9 @@ public sealed class SessionEngine
     /// Takes one learner turn with the ids of the signals the AI reported for it, never the learner's words, the id of
     /// the topic it was about and the id of the move the tutor made in the reply before it. The topic and the move made
     /// are null when there is none.
-    /// Every id is checked first. Then the turn is kept in the session's history, the odds are rebuilt from it, the last
+    /// Every id is checked first. Then the odds move with the turn's signals under the learner's own rates, the turn and
+    /// the odds after it are kept in the session's history, the chance of each state after the turn is added to the
+    /// learner's counts of every signal in that state, the last
     /// picked move is judged and its judgment recorded in the learner's score when this turn gives one, and when the
     /// leading state is clear and no move is still being judged, a move is picked for it and kept in the history too.
     /// Report one turn of a session at a time, since two turns reported at once could both be kept before either is judged.
@@ -149,13 +156,26 @@ public sealed class SessionEngine
             history = history.Add(before.AsT0);
         }
 
-        var turn = LearnerTurn.Create(reported, topic, moveMade);
-        await histories.Append(learnerId, sessionId, turn, cancellationToken);
-        history = history.Add(turn);
-
-        // The history was judged above and the turn has only registered signals, so it still replays.
-        var belief = replayer.Replay(history).AsT0;
+        // The history was judged above, so it replays, begins with a session start and every id in the turn is registered.
         var start = (SessionStarted)history[0];
+        var model = await models.Load(learnerId, cancellationToken);
+        var belief = engine.Apply(engine.Fade(replayer.Replay(history).AsT0, start.Fade), model, reported).AsT0;
+
+        // The chance the learner was in each state after the turn is added to their counts of every signal in it, as
+        // shown when the signal was reported and as not shown when it was not.
+        var change = LearnerModelChange.Create(signals.All.SelectMany(signal => belief.All.Select(stateOdds => reported.Contains(signal.Id)
+            ? RateCount.Create(signal.Id, stateOdds.StateId, stateOdds.Odds, 0)
+            : RateCount.Create(signal.Id, stateOdds.StateId, 0, stateOdds.Odds))));
+
+        // The turn and what was learned go in the history first, so a failure before the model is saved loses one turn
+        // of learning instead of counting it twice when the histories are read again.
+        var turn = LearnerTurn.Create(reported, topic, moveMade);
+        var learned = TurnLearned.Create(belief.All, change);
+        await histories.Append(learnerId, sessionId, turn, cancellationToken);
+        await histories.Append(learnerId, sessionId, learned, cancellationToken);
+        history = history.Add(turn).Add(learned);
+        await models.Add(learnerId, change, cancellationToken);
+
         var sessionBelief = SessionBelief.Create(belief, start.ClearMargin);
 
         // One more turn of registered signals cannot break a history judged whole above, but if it ever does, the

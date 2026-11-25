@@ -75,4 +75,4 @@ Claude Desktop keeps using the stdio server in Docker, as above. Its sessions st
 - `tests/LearnEngine.Mcp.Tests`: the tests of the MCP server's tools, called as the AI calls them.
 - `tests/LearnEngine.Web.Tests`: the tests of the web app's tools and of how it reads a session back.
 
-LearnEngine.Core and LearnEngine.Teaching are packed as NuGet packages with `dotnet pack -c Release`, for a host such as Pace. A host that stores history events as JSON writes them with `HistoryEventJson` or with `HistoryJsonContext.Default.HistoryEvent`.
+LearnEngine.Core and LearnEngine.Teaching are packed as NuGet packages for a host such as Pace, each with its own `dotnet pack src/LearnEngine.Core -c Release` and `dotnet pack src/LearnEngine.Teaching -c Release`. Packing the whole solution warns that the web app cannot be packed. A host that stores history events as JSON writes them with `HistoryEventJson` or with `HistoryJsonContext.Default.HistoryEvent`.

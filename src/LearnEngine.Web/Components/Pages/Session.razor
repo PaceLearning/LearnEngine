@@ -101,17 +101,32 @@
                 }
                 @if (view.ExpectedNext is not null)
                 {
+                    var confidence = view.ExpectedNext.Confidence(view.ClearMargin) switch
+                    {
+                        Confidence.High => "High",
+                        Confidence.Medium => "Medium",
+                        _ => "Low",
+                    };
+                    @if (view.ExpectedNext.AboveUsual.IsEmpty)
+                    {
+                        <p class="le-muted">No signal is likelier than usual for this learner.</p>
+                    }
                     <div class="le-bars">
-                        @foreach (var chance in view.ExpectedNext.Signals.OrderByDescending(chance => chance.Chance).Take(5))
+                        @foreach (var chance in view.ExpectedNext.AboveUsual.Take(5))
                         {
-                            <div class="le-bar">
+                            <div class="le-bar has-vs">
                                 <span class="name le-mono">@chance.SignalId</span>
                                 <span class="le-track"><span class="le-fill" style="width: @Numbers.Percent(chance.Chance)"></span></span>
                                 <span class="val le-num">@Numbers.Percent(chance.Chance)</span>
+                                <span class="val le-num le-muted" title="@($"Usual {Numbers.Percent(chance.Usual)}")">@Numbers.Two(chance.VsUsual)x</span>
                             </div>
                         }
                     </div>
-                    <p class="le-small">@(view.ExpectedNext.MoveId is null ? "Assuming no move is made." : $"Assuming the AI makes {view.ExpectedNext.MoveId}.")</p>
+                    <p class="le-small">
+                        <b>@confidence confidence</b> in where the learner will be.
+                        Only signals likelier than usual for this learner are shown, each with its chance and how many times its usual chance that is.
+                        @(view.ExpectedNext.MoveId is null ? "Assuming no move is made." : $"Assuming the AI makes {view.ExpectedNext.MoveId}.")
+                    </p>
                 }
             </div>
             <div>

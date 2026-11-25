@@ -28,6 +28,15 @@ public sealed class Expectation
     public ImmutableArray<SignalChance> Signals { get; }
 
     /// <summary>
+    /// The signals likelier than usual at the next turn, those with <see cref="SignalChance.VsUsual"/> above 1, highest
+    /// first. Signals as far above usual keep the order the app registered them in.
+    /// </summary>
+    // Worked out on read, not in the constructor, so a kept line with a null signal reaches the reader's checks.
+    // OrderByDescending keeps the registration order of equal values.
+    [JsonIgnore]
+    public ImmutableArray<SignalChance> AboveUsual => [.. Signals.Where(signal => signal.VsUsual > 1).OrderByDescending(signal => signal.VsUsual)];
+
+    /// <summary>
     /// The chance of each topic the next turn may be about, most likely first. They add up to 1, or the list is empty
     /// when the engine knows no topic to expect.
     /// </summary>
@@ -42,6 +51,12 @@ public sealed class Expectation
         Signals = signals;
         Topics = topics;
     }
+
+    /// <summary>
+    /// How sure the engine is of the state the learner is predicted to be in at the next turn, under the given clear
+    /// margin: the rule of <see cref="Belief.Confidence"/> applied to <see cref="Odds"/>.
+    /// </summary>
+    public Confidence Confidence(double clearMargin) => Belief.Create(Odds).Confidence(clearMargin);
 
     /// <summary>
     /// Creates the expectation of the next turn after the given move, or none, with the predicted odds, the chance of

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
+using LearnEngine.Core.Odds;
 using LearnEngine.Core.Sessions;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
@@ -178,12 +179,20 @@ public sealed class LearnTools(
                 why = result.Pick.AsT0.Why;
             }
 
-            // Ties keep the order the app registered the signals in, and topics come most likely first already.
+            // The confidence of what is expected uses the session's clear margin, as the confidence of the state does.
+            var expectConfidence = result.Expected.Confidence(belief.ClearMargin) switch
+            {
+                Confidence.High => "high",
+                Confidence.Medium => "medium",
+                _ => "low",
+            };
+
+            // The signals above usual come furthest above first already, and topics most likely first.
             var expect = ExpectedNext.Create(
-                [.. result.Expected.Signals
-                    .OrderByDescending(signal => signal.Chance)
+                expectConfidence,
+                [.. result.Expected.AboveUsual
                     .Take(5)
-                    .Select(signal => ExpectedSignal.Create(signal.SignalId, Math.Round(signal.Chance, 2)))],
+                    .Select(signal => ExpectedSignal.Create(signal.SignalId, Math.Round(signal.Chance, 2), Math.Round(signal.VsUsual, 2)))],
                 [.. result.Expected.Topics
                     .Take(5)
                     .Select(topicChance => ExpectedTopic.Create(topicChance.Topic, Math.Round(topicChance.Chance, 2)))]);
@@ -194,12 +203,12 @@ public sealed class LearnTools(
             if (belief.IsClear)
                 summary = $"{leader.StateId} {Math.Round(leader.Odds * 100)}%: {states.Find(leader.StateId).AsT0.Description}";
 
-            var confidence = "low";
-            if (belief.IsClear)
-                confidence = "medium";
-
-            if (belief.IsClear && belief.Margin >= 0.4)
-                confidence = "high";
+            var confidence = belief.Confidence switch
+            {
+                Confidence.High => "high",
+                Confidence.Medium => "medium",
+                _ => "low",
+            };
 
             var next = $"After the student's next message, call report_turn with sessionId \"{sessionId}\" and turn {highestAfter + 1}, before you reply.";
             if (missed.Length == 1)

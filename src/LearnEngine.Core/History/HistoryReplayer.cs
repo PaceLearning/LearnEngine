@@ -123,9 +123,9 @@ public sealed class HistoryReplayer
                     return BrokenHistory.Create(index, "What was expected of the next turn does not have one odds from 0 to 1 per registered state, in the order they were registered, adding up to 1.");
 
                 var signalsFit = expected.Expected.Signals.Select(chance => chance.SignalId).SequenceEqual(signals.All.Select(signal => signal.Id))
-                    && expected.Expected.Signals.All(chance => chance.Chance >= 0 && chance.Chance <= 1);
+                    && expected.Expected.Signals.All(chance => chance.Chance >= 0 && chance.Chance <= 1 && chance.Usual >= 0 && chance.Usual <= 1);
                 if (!signalsFit)
-                    return BrokenHistory.Create(index, "What was expected of the next turn does not have one chance from 0 to 1 per registered signal, in the order they were registered.");
+                    return BrokenHistory.Create(index, "What was expected of the next turn does not have one chance and one usual chance from 0 to 1 per registered signal, in the order they were registered.");
 
                 var topicsFit = expected.Expected.Topics.All(chance => chance.Chance >= 0 && chance.Chance <= 1);
                 if (!topicsFit)

@@ -43,7 +43,7 @@ public sealed class Predictor
     /// move, or none, first.
     /// The odds of the next turn are predicted with the learner's move effects, as <see cref="OddsEngine.Predict"/> does.
     /// The chance of each signal is the sum over every state of its predicted odds times the learner's rate of the signal
-    /// in it. The chance of each topic is the count of the learner's links from the last topic to it, plus 1 when it is
+    /// in it. Its usual chance is the same sum over the priors of the states in place of the predicted odds. The chance of each topic is the count of the learner's links from the last topic to it, plus 1 when it is
     /// the last topic itself, since a learner often stays on a topic, plus <see cref="ComeBackWeight"/> times the share
     /// of the learner's turns on it that were not in a goal state, since a learner may come back to a topic they had
     /// trouble with. These are rescaled to add up to 1, most likely first, and a topic with none of them is left out.
@@ -55,11 +55,13 @@ public sealed class Predictor
         ArgumentNullException.ThrowIfNull(model);
 
         var predicted = engine.Predict(belief, model, moveId);
+        var priors = engine.Start();
 
         // Every signal has a rate in every state, because registration checked the table is whole.
         var expectedSignals = signals.All.Select(signal => SignalChance.Create(
             signal.Id,
-            predicted.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId).AsT0, rateWeight))));
+            predicted.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId).AsT0, rateWeight)),
+            priors.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId).AsT0, rateWeight))));
 
         var candidates = (lastTopic is null ? model.Topics : model.Topics.Add(lastTopic)).Distinct(StringComparer.Ordinal);
         var weighed = candidates

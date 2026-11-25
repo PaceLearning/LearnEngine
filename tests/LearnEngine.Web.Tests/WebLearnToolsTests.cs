@@ -65,7 +65,9 @@ public sealed class WebLearnToolsTests : IDisposable
         var answer = ToolAnswers.Read(await tools.ReportTurn(sessionId, 1, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
 
         Assert.Equal(1, answer.GetProperty("turn").GetInt32());
-        Assert.True(answer.TryGetProperty("expect", out _));
+        Assert.True(answer.TryGetProperty("expect", out var expect));
+        Assert.Contains(expect.GetProperty("confidence").GetString(), new[] { "high", "medium", "low" });
+        Assert.All(expect.GetProperty("signals").EnumerateArray(), signal => Assert.True(signal.GetProperty("vsUsual").GetDouble() >= 1));
         Assert.True(answer.TryGetProperty("next", out _));
     }
 

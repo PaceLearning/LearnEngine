@@ -39,7 +39,12 @@ public sealed class SessionBelief
     /// </summary>
     public bool IsClear { get; }
 
-    private SessionBelief(ImmutableArray<StateOdds> all, StateOdds leader, StateOdds? runnerUp, double margin, double clearMargin, bool isClear)
+    /// <summary>
+    /// How sure the engine is of the leader under <see cref="ClearMargin"/>, as <see cref="Belief.Confidence"/> gives it.
+    /// </summary>
+    public Confidence Confidence { get; }
+
+    private SessionBelief(ImmutableArray<StateOdds> all, StateOdds leader, StateOdds? runnerUp, double margin, double clearMargin, bool isClear, Confidence confidence)
     {
         All = all;
         Leader = leader;
@@ -47,9 +52,10 @@ public sealed class SessionBelief
         Margin = margin;
         ClearMargin = clearMargin;
         IsClear = isClear;
+        Confidence = confidence;
     }
 
     // Internal so a session belief only comes from the engine, with the clear margin stamped on the session.
     internal static SessionBelief Create(Belief belief, double clearMargin) =>
-        new(belief.All, belief.Leader, belief.RunnerUp, belief.Margin, clearMargin, belief.ClearLeader(clearMargin).IsT0);
+        new(belief.All, belief.Leader, belief.RunnerUp, belief.Margin, clearMargin, belief.ClearLeader(clearMargin).IsT0, belief.Confidence(clearMargin));
 }

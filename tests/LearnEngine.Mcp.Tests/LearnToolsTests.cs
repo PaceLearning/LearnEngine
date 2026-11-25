@@ -34,12 +34,18 @@ public sealed class LearnToolsTests : IDisposable
 
         foreach (var answer in new[] { first, second, third })
         {
-            var signals = answer.GetProperty("expect").GetProperty("signals");
-            Assert.InRange(signals.GetArrayLength(), 1, 5);
+            var expect = answer.GetProperty("expect");
+            Assert.Contains(expect.GetProperty("confidence").GetString(), new[] { "high", "medium", "low" });
+            Assert.Equal(["confidence", "signals", "topics"], expect.EnumerateObject().Select(property => property.Name));
+            var signals = expect.GetProperty("signals");
+            Assert.InRange(signals.GetArrayLength(), 0, 5);
             var chances = signals.EnumerateArray().Select(signal => signal.GetProperty("chance").GetDouble()).ToList();
-            Assert.Equal(chances.OrderByDescending(chance => chance), chances);
+            var vsUsual = signals.EnumerateArray().Select(signal => signal.GetProperty("vsUsual").GetDouble()).ToList();
+            Assert.Equal(vsUsual.OrderByDescending(value => value), vsUsual);
+            Assert.All(vsUsual, value => Assert.True(value >= 1));
             Assert.All(signals.EnumerateArray(), signal => Assert.False(string.IsNullOrEmpty(signal.GetProperty("signal").GetString())));
             Assert.All(chances, chance => Assert.Equal(Math.Round(chance, 2), chance));
+            Assert.All(vsUsual, value => Assert.Equal(Math.Round(value, 2), value));
         }
 
         var topics = third.GetProperty("expect").GetProperty("topics");
@@ -83,6 +89,26 @@ public sealed class LearnToolsTests : IDisposable
         Assert.Equal(JsonValueKind.Object, answer.GetProperty("move").ValueKind);
         Assert.Contains(answer.GetProperty("move").GetProperty("id").GetString()!, answer.GetProperty("why").GetString()!, StringComparison.Ordinal);
         Assert.False(answer.TryGetProperty("do", out _));
+    }
+
+    [Fact]
+    public async Task ReportTurn_ClearlyStuck_ExpectsWithTheConfidenceOfWhereTheMoveLeadsAndOnlySignalsAboveUsual()
+    {
+        using var provider = Create();
+        var tools = provider.GetRequiredService<LearnTools>();
+        var sessionId = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
+
+        JsonElement answer = default;
+        for (var turn = 1; turn <= 3; turn++)
+            answer = ToolAnswers.Read(await tools.ReportTurn(sessionId, turn, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case"));
+
+        // The state is sure, but the move picked is expected to take the student out of stuck most of the time, so
+        // where they will be at the next message is less sure.
+        var expect = answer.GetProperty("expect");
+        Assert.Equal("high", answer.GetProperty("state").GetProperty("confidence").GetString());
+        Assert.Equal("medium", expect.GetProperty("confidence").GetString());
+        Assert.NotEqual(0, expect.GetProperty("signals").GetArrayLength());
+        Assert.All(expect.GetProperty("signals").EnumerateArray(), signal => Assert.True(signal.GetProperty("vsUsual").GetDouble() > 1));
     }
 
     [Fact]

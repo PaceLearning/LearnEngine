@@ -5,8 +5,9 @@ namespace LearnEngine.Core.History;
 
 /// <summary>
 /// What the engine expected of the next learner turn, kept when the session started and after every turn: the
-/// predicted odds, the chance of every signal and the chance of each topic, assuming the move picked then, or no move.
-/// The learner's model keeps changing, so how unexpected the next turn was is read against this, not worked out again.
+/// predicted odds, the chance and usual chance of every signal and the chance of each topic, assuming the move picked
+/// then, or no move. The learner's model keeps changing, so how unexpected the next turn was is read against this, and
+/// how each signal compared with its usual chance is read from it, not worked out again.
 /// </summary>
 public sealed class TurnExpected : HistoryEvent
 {

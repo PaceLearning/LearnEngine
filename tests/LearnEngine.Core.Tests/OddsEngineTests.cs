@@ -189,6 +189,22 @@ public sealed class OddsEngineTests
     }
 
     [Fact]
+    public void Confidence_LowWhenNotClear_MediumWhenClear_HighWhenClearAndFarAhead()
+    {
+        using var provider = Create();
+        var engine = provider.GetRequiredService<OddsEngine>();
+        var priors = engine.Start();
+        var farAhead = engine.Apply(priors, LearnerModel.Empty, [LeansFirst]).AsT0;
+
+        // The priors put the first state 0.2 ahead, and one leans.first puts it about 0.82 ahead.
+        Assert.True(farAhead.Margin >= Belief.HighConfidenceMargin);
+        Assert.Equal(Confidence.Low, priors.Confidence(0.25));
+        Assert.Equal(Confidence.Medium, priors.Confidence(0.15));
+        Assert.Equal(Confidence.High, farAhead.Confidence(0.15));
+        Assert.Equal(Confidence.Low, farAhead.Confidence(farAhead.Margin + 0.01));
+    }
+
+    [Fact]
     public void Leader_SameOdds_IsTheStateRegisteredFirst()
     {
         var services = new ServiceCollection();

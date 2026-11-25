@@ -40,6 +40,56 @@ public sealed class PredictorTests
     }
 
     [Fact]
+    public void Expect_FromThePriorsWithNoMove_GivesUsualChancesAndNoSignalAboveUsual()
+    {
+        using var provider = Create();
+        var predictor = provider.GetRequiredService<Predictor>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+
+        var expected = predictor.Expect(engine.Start(), LearnerModel.Empty, null, null);
+
+        // Nothing is known about where the learner is, so every chance is its usual one.
+        Assert.All(expected.Signals, chance => Assert.Equal(chance.Usual, chance.Chance, Precision));
+        Assert.Equal(0.6 * 0.5 + 0.4 * 0.1, expected.Signals[0].Usual, Precision);
+        Assert.Empty(expected.AboveUsual);
+    }
+
+    [Fact]
+    public void Expect_LearnerClearlyInTheSecondState_IsHighlyConfidentAndListsOnlySignalsAboveUsual()
+    {
+        using var provider = Create();
+        var predictor = provider.GetRequiredService<Predictor>();
+        var engine = provider.GetRequiredService<OddsEngine>();
+        var once = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansSecond]).AsT0;
+        var twice = engine.Apply(engine.Predict(once, LearnerModel.Empty, null), LearnerModel.Empty, [LeansSecond]).AsT0;
+
+        var expected = predictor.Expect(twice, LearnerModel.Empty, null, null);
+
+        Assert.True(expected.Odds[1].Odds - expected.Odds[0].Odds >= Belief.HighConfidenceMargin);
+        Assert.Equal(Confidence.High, expected.Confidence(OddsOptions.DefaultClearMargin));
+        Assert.NotEmpty(expected.AboveUsual);
+        Assert.All(expected.AboveUsual, chance => Assert.True(chance.VsUsual > 1));
+        Assert.Equal(expected.AboveUsual.Select(chance => chance.VsUsual).OrderDescending(), expected.AboveUsual.Select(chance => chance.VsUsual));
+        Assert.Equal(LeansSecond, expected.AboveUsual[0].SignalId);
+        Assert.Equal(0.6 * 0.2 + 0.4 * 0.4, expected.AboveUsual[0].Usual, Precision);
+        Assert.Equal(expected.AboveUsual[0].Chance / expected.AboveUsual[0].Usual, expected.AboveUsual[0].VsUsual, Precision);
+        // went.well and went.badly have the same rate in both states, so they are always as likely as usual.
+        Assert.Equal([LeansSecond], expected.AboveUsual.Select(chance => chance.SignalId));
+    }
+
+    [Fact]
+    public void Read_ExpectationKeptBeforeUsualChances_ReadsWithNoSignalAboveUsual()
+    {
+        const string line = """{"event":"turn_expected","expected":{"move_id":null,"odds":[{"state_id":"first","odds":1}],"signals":[{"signal_id":"leans.first","chance":0.5}],"topics":[]}}""";
+
+        var read = HistoryEventJson.Read(line);
+
+        var expected = Assert.IsType<TurnExpected>(read.AsT0).Expected;
+        Assert.Equal(0, Assert.Single(expected.Signals).Usual);
+        Assert.Empty(expected.AboveUsual);
+    }
+
+    [Fact]
     public async Task ReportTurn_ThirdTurn_ExpectsTheSumOfThePredictedOddsTimesTheLearnersRates()
     {
         using var provider = Create();
@@ -229,14 +279,16 @@ public sealed class PredictorTests
         var replayer = provider.GetRequiredService<HistoryReplayer>();
         var fingerprint = provider.GetRequiredService<VocabularyFingerprint>().Value;
         ImmutableArray<StateOdds> odds = [StateOdds.Create(First, 0.5), StateOdds.Create(Second, 0.5)];
-        ImmutableArray<SignalChance> chances = [.. new[] { LeansFirst, LeansSecond, WentWell, WentBadly }.Select(signalId => SignalChance.Create(signalId, 0.5))];
+        ImmutableArray<SignalChance> chances = [.. new[] { LeansFirst, LeansSecond, WentWell, WentBadly }.Select(signalId => SignalChance.Create(signalId, 0.5, 0.4))];
 
         var fits = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create(One, odds, chances, []))]);
+        var usualOutOfRange = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create(null, odds, chances.SetItem(0, SignalChance.Create(LeansFirst, 0.5, 1.5)), []))]);
         var statesOutOfOrder = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create(null, odds.Reverse(), chances, []))]);
         var signalMissing = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create(null, odds, chances.RemoveAt(0), []))]);
         var unknownMove = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create("not_a_move", odds, chances, []))]);
 
         Assert.True(fits.IsT0);
+        Assert.Equal(1, usualOutOfRange.AsT2.EventIndex);
         Assert.Equal(1, statesOutOfOrder.AsT2.EventIndex);
         Assert.Equal(1, signalMissing.AsT2.EventIndex);
         Assert.Equal(1, unknownMove.AsT2.EventIndex);

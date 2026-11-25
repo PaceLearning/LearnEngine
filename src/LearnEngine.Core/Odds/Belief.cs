@@ -10,6 +10,11 @@ namespace LearnEngine.Core.Odds;
 public sealed class Belief
 {
     /// <summary>
+    /// How far a clear leader must be ahead of the runner up for a high confidence.
+    /// </summary>
+    public const double HighConfidenceMargin = 0.4;
+
+    /// <summary>
     /// The odds of every state, in the order the app registered the states. They add up to 1.
     /// </summary>
     public ImmutableArray<StateOdds> All { get; }
@@ -59,5 +64,20 @@ public sealed class Belief
             return NoClearLeader.Create(Margin);
 
         return Leader;
+    }
+
+    /// <summary>
+    /// How sure the engine is of the leader under the given clear margin: low when the leader is not clear, medium when
+    /// it is clear, and high when it is clear and ahead of the runner up by at least <see cref="HighConfidenceMargin"/>.
+    /// </summary>
+    public Confidence Confidence(double clearMargin)
+    {
+        if (ClearLeader(clearMargin).IsT1)
+            return Odds.Confidence.Low;
+
+        if (Margin >= HighConfidenceMargin)
+            return Odds.Confidence.High;
+
+        return Odds.Confidence.Medium;
     }
 }

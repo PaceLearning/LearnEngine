@@ -1,7 +1,8 @@
 namespace LearnEngine.Mcp.Tools;
 
 /// <summary>
-/// A signal the engine expects in the student's next message, with its chance. For the AI only.
+/// A signal the engine expects in the student's next message more than usual, with its chance and how many times its
+/// usual chance that is. For the AI only.
 /// </summary>
 public sealed class ExpectedSignal
 {
@@ -15,14 +16,20 @@ public sealed class ExpectedSignal
     /// </summary>
     public double Chance { get; }
 
-    private ExpectedSignal(string signal, double chance)
+    /// <summary>
+    /// The chance over the signal's usual chance for this student, above 1, rounded to two places.
+    /// </summary>
+    public double VsUsual { get; }
+
+    private ExpectedSignal(string signal, double chance, double vsUsual)
     {
         Signal = signal;
         Chance = chance;
+        VsUsual = vsUsual;
     }
 
     /// <summary>
-    /// Creates the expected signal with the given id and chance.
+    /// Creates the expected signal with the given id, chance and chance over its usual one.
     /// </summary>
-    public static ExpectedSignal Create(string signal, double chance) => new(signal, chance);
+    public static ExpectedSignal Create(string signal, double chance, double vsUsual) => new(signal, chance, vsUsual);
 }

@@ -55,6 +55,10 @@ public sealed class SessionReaderTests : IDisposable
         }
 
         Assert.Equal(kept[^1].Expected.Signals.AsEnumerable(), view.ExpectedNext!.Signals.AsEnumerable());
+
+        // The usual chances are read back as kept, so the Session page shows how each signal compared with them that day.
+        Assert.All(view.ExpectedNext.Signals, chance => Assert.True(chance.Usual > 0));
+        Assert.All(view.ExpectedNext.AboveUsual, chance => Assert.True(chance.VsUsual > 1));
         Assert.Equal(view.Turns[^1].Odds.AsEnumerable(), view.Belief.All.AsEnumerable());
     }
 

@@ -144,13 +144,13 @@ public sealed class HistoryEventJsonTests
         var expected = TurnExpected.Create(Expectation.Create(
             "worked_example",
             [StateOdds.Create("stuck", 0.25), StateOdds.Create("following", 0.75)],
-            [SignalChance.Create("asks.how_or_why", 0.31)],
+            [SignalChance.Create("asks.how_or_why", 0.31, 0.2)],
             [TopicChance.Create("recursion.base_case", 0.55), TopicChance.Create("recursion.call_stack", 0.45)]));
 
         var line = HistoryEventJson.Write(expected);
         var read = HistoryEventJson.Read(line);
 
-        Assert.Equal("""{"event":"turn_expected","expected":{"move_id":"worked_example","odds":[{"state_id":"stuck","odds":0.25},{"state_id":"following","odds":0.75}],"signals":[{"signal_id":"asks.how_or_why","chance":0.31}],"topics":[{"topic":"recursion.base_case","chance":0.55},{"topic":"recursion.call_stack","chance":0.45}]}}""", line);
+        Assert.Equal("""{"event":"turn_expected","expected":{"move_id":"worked_example","odds":[{"state_id":"stuck","odds":0.25},{"state_id":"following","odds":0.75}],"signals":[{"signal_id":"asks.how_or_why","chance":0.31,"usual":0.2}],"topics":[{"topic":"recursion.base_case","chance":0.55},{"topic":"recursion.call_stack","chance":0.45}]}}""", line);
         var readBack = Assert.IsType<TurnExpected>(read.AsT0).Expected;
         Assert.Equal("worked_example", readBack.MoveId);
         Assert.Equal(expected.Expected.Odds.AsEnumerable(), readBack.Odds.AsEnumerable());
@@ -243,7 +243,7 @@ public sealed class HistoryEventJsonTests
             SessionStarted.Create("0123456789abcdef", 0.15, 0.15),
             LearnerTurn.Create(["reply.minimal"]),
             MovePicked.Create("stuck", "worked_example", 0.7, "Why worked_example."),
-            TurnExpected.Create(Expectation.Create(null, [StateOdds.Create("stuck", 1)], [SignalChance.Create("reply.minimal", 0.5)], [])),
+            TurnExpected.Create(Expectation.Create(null, [StateOdds.Create("stuck", 1)], [SignalChance.Create("reply.minimal", 0.5, 0.25)], [])),
         ];
 
         foreach (var historyEvent in events)

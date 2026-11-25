@@ -41,7 +41,8 @@ public sealed class TurnReport
     public string? Do { get; }
 
     /// <summary>
-    /// The signals and topics the engine expects in the student's next message, for the AI only.
+    /// How sure the engine is of the student's next message, the signals likelier than usual and the topics it expects
+    /// in it, for the AI only.
     /// </summary>
     public ExpectedNext Expect { get; }
 

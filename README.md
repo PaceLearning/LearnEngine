@@ -35,7 +35,7 @@ Students: the full guide, a skill to download and text to paste into a Project a
 
 ## Watch it learn in the web app
 
-LearnEngine.Web is a local web app that is also an MCP server. An AI talks to it over HTTP, and its pages show the engine at work while it does. You need the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+LearnEngine.Web is a local web app that is also an MCP server. An AI talks to it over HTTP, and its pages show the engine at work while it does. You need the [.NET 11 SDK](https://dotnet.microsoft.com/download).
 
 1. Run it from the root of this repository:
 
@@ -67,11 +67,12 @@ Claude Desktop keeps using the stdio server in Docker, as above. Its sessions st
 ## Projects
 
 - `src/LearnEngine.Core`: the engine. It keeps the odds, learns how each learner learns, chooses the move most likely to bring them to a goal state, and keeps each session as a history of events. It never stores the learner's words.
-- `src/LearnEngine.Teaching`: the teaching vocabulary, all in `RegistrationExtension.cs`: the signals, the states with their priors, the rate of every signal in every state, the moves allowed in each state, the goal states and where each move leads. A host registers it with `AddTeachingVocabulary()`.
+- `src/LearnEngine.Teaching`: the teaching vocabulary, all in `RegistrationExtension.cs`: the signals, the states with their priors, the rate of every signal in every state, the moves allowed in each state, the goal states and where each move leads. A host registers it with `AddTeachingVocabulary()`, then the engine with `AddLearnEngine()`.
 - `src/LearnEngine.Mcp`: the MCP server for Claude Desktop, with file stores for one learner.
 - `src/LearnEngine.Web`: the local web app, a Blazor Server app that serves the same tools over HTTP at `/mcp` and shows each session live.
+- `samples/LearnEngine.Sample`: a console walkthrough. It replays one conversation through the engine and prints, for each turn, the state, the move to make with why, and what is expected next with its confidence. Run it with `dotnet run --project samples/LearnEngine.Sample`. `1-Odds.md`, `2-Moves.md` and `3-Expect.md` beside it explain the run step by step.
 - `tests/LearnEngine.Core.Tests`: the tests of the engine.
 - `tests/LearnEngine.Mcp.Tests`: the tests of the MCP server's tools, called as the AI calls them.
 - `tests/LearnEngine.Web.Tests`: the tests of the web app's tools and of how it reads a session back.
 
-LearnEngine.Core and LearnEngine.Teaching are packed as NuGet packages with `dotnet pack -c Release`, for a host such as Pace. A host that stores history events as JSON writes them with `HistoryEventJson` or with `HistoryJsonContext.Default.HistoryEvent`.
+LearnEngine.Core and LearnEngine.Teaching are packed as NuGet packages for a host such as Pace, each with its own `dotnet pack src/LearnEngine.Core -c Release` and `dotnet pack src/LearnEngine.Teaching -c Release`. Packing the whole solution warns that the web app cannot be packed. A host that stores history events as JSON writes them with `HistoryEventJson` or with `HistoryJsonContext.Default.HistoryEvent`.

@@ -2,12 +2,12 @@
 # Run it with a volume for /data, where the histories, learner model and compliance logs are kept between runs:
 #   docker run -i --rm -v learnengine:/data learnengine-mcp
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-noble-aot AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-resolute-aot AS build
 ARG TARGETARCH
 WORKDIR /src
 
 # Restored on their own first, so a change to the code does not download the packages again.
-COPY Directory.Packages.props LearnEngine.slnx ./
+COPY Directory.Build.props Directory.Packages.props LearnEngine.slnx ./
 COPY src/LearnEngine.Core/LearnEngine.Core.csproj src/LearnEngine.Core/
 COPY src/LearnEngine.Teaching/LearnEngine.Teaching.csproj src/LearnEngine.Teaching/
 COPY src/LearnEngine.Mcp/LearnEngine.Mcp.csproj src/LearnEngine.Mcp/
@@ -19,7 +19,7 @@ RUN rid=linux-x64 && if [ "$TARGETARCH" = "arm64" ]; then rid=linux-arm64; fi \
     && dotnet publish src/LearnEngine.Mcp/LearnEngine.Mcp.csproj -c Release -r $rid --no-restore -o /app \
     && mkdir /data
 
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled
+FROM mcr.microsoft.com/dotnet/runtime-deps:11.0-resolute-chiseled
 WORKDIR /app
 COPY --from=build /app/LearnEngine.Mcp ./
 

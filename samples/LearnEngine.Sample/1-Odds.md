@@ -1,135 +1,86 @@
-# 1. The odds engine on its own
+# 1. The odds
 
-One conversation, replayed through the old engine: the AI reports signals for each learner turn, and the engine keeps
-odds on what the tutor should do next. The conversation is the same in all three files. Only what happens inside
-changes.
+Run the sample from the root of the repository:
 
-The conversation is invented. Sam is learning recursion from an AI tutor.
+```
+dotnet run --project samples/LearnEngine.Sample
+```
+
+It replays one invented conversation through the engine with the teaching vocabulary LearnEngine ships with. Sam is
+learning recursion from an AI tutor. For each of Sam's messages the AI reports the ids of the signals it shows, never
+Sam's words, the topic it is about and the move the tutor made in the reply before it. This file is about the first
+thing the engine does with a turn: it keeps odds on the state Sam is in.
 
 ## What the engine has
 
-Five hypotheses, each with a prior (its odds before anything is seen):
+Five states, each with a prior: its odds before anything is seen. They are in
+`src/LearnEngine.Teaching/RegistrationExtension.cs`.
 
-| Hypothesis | Prior | Meaning |
+| State | Prior | Meaning |
 |---|---|---|
-| `overloaded` | 15% | Too much new at once: slow down, shrink the step, or stop |
-| `model_clash` | 10% | Holds a different picture from the one taught: find it and bridge to it |
-| `following` | 35% | It is landing: keep going |
-| `needs_example` | 25% | Needs something concrete, like a worked case |
-| `wants_to_do` | 15% | Wants to try it themselves |
+| `overloaded` | 15% | Too much is new at once |
+| `model_clash` | 10% | Sam holds a different picture of the idea than the one taught |
+| `following` | 35% | The explanations are landing |
+| `stuck` | 25% | Sam needs something concrete, such as a worked case |
+| `eager` | 15% | Sam wants to try it rather than hear more |
 
-For each signal, how likely it is under each hypothesis (only the signals this conversation uses):
+Fourteen signals, each with a rate in every state: the chance the signal shows up on any one message while the learner
+is in that state. A few of them:
 
-| Signal | overloaded | model_clash | following | needs_example | wants_to_do |
+| Signal | overloaded | model_clash | following | stuck | eager |
 |---|---|---|---|---|---|
-| `reply.minimal` | 0.40 | 0.15 | 0.60 | 0.25 | 0.30 |
-| `asks.how_or_why` | 0.15 | 0.40 | 0.50 | 0.35 | 0.15 |
-| `asks.for_help` | 0.40 | 0.10 | 0.15 | 0.50 | 0.30 |
-| `says.dont_get_it` | 0.50 | 0.30 | 0.05 | 0.60 | 0.05 |
-| `offers.own_answer` | 0.05 | 0.15 | 0.60 | 0.10 | 0.60 |
-| `offers.own_model` | 0.10 | 0.70 | 0.20 | 0.20 | 0.10 |
-| `pushes.back` | 0.20 | 0.70 | 0.05 | 0.15 | 0.10 |
-| `says.overwhelmed` | 0.90 | 0.15 | 0.05 | 0.10 | 0.05 |
+| `reply.minimal` | 0.25 | 0.08 | 0.30 | 0.12 | 0.10 |
+| `says.dont_get_it` | 0.15 | 0.08 | 0.01 | 0.20 | 0.02 |
+| `pushes.back` | 0.03 | 0.25 | 0.02 | 0.04 | 0.04 |
+| `says.overwhelmed` | 0.12 | 0.02 | 0.01 | 0.04 | 0.01 |
+| `asks.to_try` | 0.01 | 0.02 | 0.06 | 0.02 | 0.25 |
 
-Before each learner turn the belief fades 15% back toward the priors. A leader is **clear** when it is at least 15
-points ahead of the runner up. The tutor acts on a clear leader and otherwise keeps doing what it was doing.
+The rates and priors are guesses, written before any session was recorded.
 
 ## How one turn is worked out
 
-Turn 1, Sam says "Okay." and the AI reports `reply.minimal`. Multiply each prior by the signal's likelihood, then
-divide by the total so the odds add up to 100% again:
+A turn moves the odds in two steps.
 
-| | overloaded | model_clash | following | needs_example | wants_to_do | total |
-|---|---|---|---|---|---|---|
-| prior | 0.15 | 0.10 | 0.35 | 0.25 | 0.15 | 1 |
-| times likelihood | 0.060 | 0.015 | 0.210 | 0.063 | 0.045 | 0.393 |
-| divided by total | 15% | 4% | **54%** | 16% | 11% | 100% |
+1. **Predict** where the move made leads. Each move has an effect in each state it is allowed in: the chance of each
+   state by the next message. With no move made, every state keeps 85% of its odds and gets 15% of its prior back.
+   That 15% is the fade.
+2. **Apply** the turn's signals. Every signal counts, not only the ones reported: a signal that showed up multiplies
+   the odds of each state by its rate there, and a signal that did not show up multiplies them by 1 minus its rate.
+   Then the odds are divided by their total so they add up to 100% again.
 
-Every later turn is the same: fade, then multiply by each signal, then divide by the total.
+Turn 1: Sam says "Okay." and the AI reports `reply.minimal`. No move was made yet, and the odds are still the priors,
+so the fade leaves them as they are.
 
-## The conversation
+| | overloaded | model_clash | following | stuck | eager |
+|---|---|---|---|---|---|
+| prior | 0.15 | 0.10 | 0.35 | 0.25 | 0.15 |
+| times the rate of `reply.minimal` | 0.25 | 0.08 | 0.30 | 0.12 | 0.10 |
+| times 1 minus the rate of the 13 other signals | 0.431 | 0.231 | 0.311 | 0.281 | 0.317 |
+| product | 0.0162 | 0.0019 | 0.0327 | 0.0084 | 0.0048 |
+| divided by the total, 0.0639 | 25% | 3% | **51%** | 13% | 7% |
 
-**Tutor:** Recursion is when a function calls itself. `factorial(n)` is `n` times `factorial(n - 1)`.
+This is the first line the sample prints for Sam: `following 51%, clear by 26 points`.
 
-**Sam (1):** Okay.
-> signals: `reply.minimal`
-> odds: following 54, needs_example 16, overloaded 15, wants_to_do 11, model_clash 4
-> engine: **following, clear** (by 38). Keep going.
+## Clear or not
 
-**Tutor:** What do you think `factorial(3)` gives?
+The leader is **clear** when it is at least 15 points ahead of the runner up. Only a clear leader lets a move be picked.
+The confidence the engine gives is low when the leader is not clear, medium when it is, and high when it is clear by
+40 points or more.
 
-**Sam (2):** 6? Because 3 times 2 times 1.
-> signals: `offers.own_answer`
-> odds: following 75, wants_to_do 18, needs_example 4, overloaded 2, model_clash 2
-> engine: **following, clear** (by 57). Keep going.
+| Turn | Sam | State |
+|---|---|---|
+| 1 | Okay. | following 51%, clear by 26, medium |
+| 2 | 6? Because 3 times 2 times 1. | following 75%, clear by 54, high |
+| 3 | Why does it stop at 1? I thought 0, then -1. | model_clash 49%, clear by 20, medium |
+| 4 | No, I still think it should go to 0. | model_clash 88%, clear by 83, high |
+| 5 | I don't get it. Show me step by step? | stuck 70%, clear by 54, high |
+| 6 | Oh, so factorial(1) gives back 1 and each call multiplies? | following 64%, clear by 45, high |
+| 7 | Can I try writing sum(n) myself? | eager 66%, clear by 35, medium |
+| 8 | That's a lot. My head is spinning. | not clear: overloaded 39% or stuck 26%, low |
+| 9 | Okay. | overloaded 59%, clear by 39, medium |
 
-**Tutor:** Right. To stop, factorial has a base case: when `n` is 1, it returns 1 without calling itself.
+Turn 3 already reads Sam's own picture of the idea as a clash, and turn 4 makes it near certain. Turn 8 puts overloaded
+ahead but not by 15 points, so no move is picked there. Turn 9 settles it: `reply.minimal` is twice as
+likely from someone overloaded as from someone stuck, the two states ahead.
 
-**Sam (3):** Wait, why does it stop at 1? I thought it would keep going down to 0, then -1.
-> signals: `asks.how_or_why`, `offers.own_model`
-> odds: following 80, model_clash 10, needs_example 6, wants_to_do 3, overloaded 1
-> engine: **following, clear** (by 71). Keep going.
-
-**Tutor:** It stops because the base case returns 1, and nothing calls further.
-
-**Sam (4):** No, I still think it should go to 0. Counting stops at 0.
-> signals: `pushes.back`, `offers.own_model`
-> odds: model_clash 81, following 12, needs_example 4, overloaded 1, wants_to_do 1
-> engine: **model_clash, clear** (by 69). Find Sam's picture and bridge to it.
-
-**Tutor:** Fair. If it did go to 0, what would `factorial(0)` have to return so `factorial(3)` is still 6?
-
-**Sam (5):** I don't get it. Can you show me what happens step by step?
-> signals: `says.dont_get_it`, `asks.for_help`
-> odds: needs_example 44, model_clash 41, overloaded 12, following 2, wants_to_do 1
-> engine: needs_example ahead by 3, **not clear**. Keep doing what you were doing.
-
-**Tutor:** `factorial(3)` is 3 times `factorial(2)`, which is 2 times `factorial(1)`, which is 1. On the way back up: 2
-times 1 is 2, then 3 times 2 is 6.
-
-**Sam (6):** Oh, so `factorial(1)` gives back 1 and then each call multiplies on the way back up?
-> signals: `offers.own_answer`
-> odds: model_clash 33, following 27, needs_example 25, wants_to_do 11, overloaded 4
-> engine: model_clash ahead by 7, **not clear**.
-
-**Tutor:** Exactly.
-
-**Sam (7):** Can I try writing `sum(n)` myself? I think it is `sum(n - 1)` plus `n`.
-> signals: `offers.own_answer`
-> odds: following 54, wants_to_do 22, model_clash 15, needs_example 8, overloaded 1
-> engine: **following, clear** (by 32). Keep going.
-
-**Tutor:** Good. Before that, let me show you how the call stack keeps each frame, what a tail call is, and why deep
-recursion overflows.
-
-**Sam (8):** That's a lot. My head is spinning.
-> signals: `says.overwhelmed`
-> odds: overloaded 29, following 27, model_clash 22, needs_example 11, wants_to_do 11
-> engine: overloaded ahead by 2, **not clear**. Keep doing what you were doing.
-
-**Tutor:** Let's stop there. You did the main part.
-
-**Sam (9):** Okay.
-> signals: `reply.minimal`
-> odds: following 45, overloaded 28, needs_example 9, wants_to_do 9, model_clash 8
-> engine: **following, clear** (by 17).
-
-## What it got right
-
-- Turns 1 and 2: following, which is right.
-- Turn 4: once Sam pushes back, model_clash jumps from 10% to 81% and the engine says to find Sam's picture. That is
-  the move a good tutor makes.
-
-## What it got wrong
-
-- **Turn 3 is a miss.** Sam says outright that they picture it going to 0 and below. That is a different picture,
-  but two good turns before keep following at 80%. One turn of evidence cannot beat it.
-- **Turn 5 is not clear,** even though Sam asks plainly for a worked case.
-- **Turn 8 is the worst miss.** Sam says their head is spinning, and the engine says not clear, keep going. Seven
-  turns of evidence outweigh the strongest signal in the vocabulary.
-- **It learns nothing about Sam.** The numbers are the same for every learner and every session. If step by step
-  traces always work for Sam, the engine never finds out.
-- **It never checks whether acting on it helped.** At turn 4 it said to find Sam's picture. Whether that worked, it
-  does not know.
-
-The second file keeps the same conversation and replaces all of this with a bandit.
+`2-Moves.md` shows what the engine does with a clear state.

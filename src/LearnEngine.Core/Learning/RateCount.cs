@@ -29,7 +29,7 @@ public sealed record RateCount
     /// </summary>
     public double NotShown { get; }
 
-    // Internal, not private, so the source generated JSON reader of the history can call it.
+    // Internal, not private, so the source generated JSON readers of the history and of the learner model can call it.
     [JsonConstructor]
     internal RateCount(string signalId, string stateId, double shown, double notShown)
     {

@@ -1,13 +1,12 @@
-using System.Text.Json;
 using LearnEngine.Core.Learning;
-using LearnEngine.Core.Topics;
 
 namespace LearnEngine.Mcp.Storage;
 
 /// <summary>
 /// Keeps what the engine learned about the student as one JSON file, so it outlives the container.
-/// The file is models/{learnerId}.json under the data folder. Every add writes the whole model to a new file and then
-/// puts it in place of the old one, so an add cut short leaves the model as it was before it.
+/// The file is models/{learnerId}.json under the data folder, written by <see cref="LearnerModelJson"/>. Every add
+/// writes the whole model to a new file and then puts it in place of the old one, so an add cut short leaves the model
+/// as it was before it.
 /// </summary>
 public sealed class FileLearnerModelStore : ILearnerModelStore
 {
@@ -32,59 +31,11 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
             return LearnerModel.Empty;
 
         var json = await File.ReadAllTextAsync(path, cancellationToken);
-        SavedLearnerModel? saved;
-        try
-        {
-            saved = JsonSerializer.Deserialize(json, StorageJsonContext.Default.SavedLearnerModel);
-        }
-        catch (JsonException exception)
-        {
-            throw new InvalidDataException($"{path} is not a learner model: {exception.Message}", exception);
-        }
+        var read = LearnerModelJson.Read(json);
+        if (read.IsT1)
+            throw new InvalidDataException($"{path} is not a learner model: {read.AsT1.Reason}");
 
-        if (saved is null)
-            throw new InvalidDataException($"{path} is null, not a learner model.");
-
-        // Nullable annotations are not enforced inside a list, and the counts are checked as the model is made.
-        var badCount = saved.Rates.Any(count =>
-            count is null
-            || string.IsNullOrWhiteSpace(count.SignalId)
-            || string.IsNullOrWhiteSpace(count.StateId)
-            || !(count.Shown >= 0 && double.IsFinite(count.Shown))
-            || !(count.NotShown >= 0 && double.IsFinite(count.NotShown)));
-        if (badCount)
-            throw new InvalidDataException($"{path} has a count that is null, has an empty id or is not 0 or more.");
-
-        var badStep = saved.Effects.Any(count =>
-            count is null
-            || string.IsNullOrWhiteSpace(count.FromStateId)
-            || string.IsNullOrWhiteSpace(count.ToStateId)
-            || (count.MoveId is not null && string.IsNullOrWhiteSpace(count.MoveId))
-            || !(count.Count >= 0 && double.IsFinite(count.Count)));
-        if (badStep)
-            throw new InvalidDataException($"{path} has a step count that is null, has an empty id or is not 0 or more.");
-
-        var badLink = saved.TopicLinks.Any(count =>
-            count is null
-            || !TopicIds.IsValid(count.FromTopic)
-            || !TopicIds.IsValid(count.ToTopic)
-            || !(count.Count >= 0 && double.IsFinite(count.Count)));
-        if (badLink)
-            throw new InvalidDataException($"{path} has a topic link count that is null, has a topic that is not valid or is not 0 or more.");
-
-        var badTopicState = saved.TopicStates.Any(count =>
-            count is null
-            || !TopicIds.IsValid(count.Topic)
-            || string.IsNullOrWhiteSpace(count.StateId)
-            || !(count.Count >= 0 && double.IsFinite(count.Count)));
-        if (badTopicState)
-            throw new InvalidDataException($"{path} has a topic state count that is null, has a topic or state that is not valid or is not 0 or more.");
-
-        return LearnerModel.Create(
-            saved.Rates.Select(count => RateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)),
-            saved.Effects.Select(count => EffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)),
-            saved.TopicLinks.Select(count => TopicLinkCount.Create(count.FromTopic, count.ToTopic, count.Count)),
-            saved.TopicStates.Select(count => TopicStateCount.Create(count.Topic, count.StateId, count.Count)));
+        return read.AsT0;
     }
 
     /// <inheritdoc/>
@@ -99,12 +50,7 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
         try
         {
             var model = (await Load(learnerId, cancellationToken)).Add(change);
-            var saved = SavedLearnerModel.Create(
-                model.Rates.Select(count => SavedRateCount.Create(count.SignalId, count.StateId, count.Shown, count.NotShown)),
-                model.Effects.Select(count => SavedEffectCount.Create(count.FromStateId, count.MoveId, count.ToStateId, count.Count)),
-                model.TopicLinks.Select(count => SavedTopicLinkCount.Create(count.FromTopic, count.ToTopic, count.Count)),
-                model.TopicStates.Select(count => SavedTopicStateCount.Create(count.Topic, count.StateId, count.Count)));
-            var json = JsonSerializer.Serialize(saved, StorageJsonContext.Default.SavedLearnerModel);
+            var json = LearnerModelJson.Write(model);
 
             var path = Path.Combine(folder, learnerId + ".json");
             var written = path + ".new";

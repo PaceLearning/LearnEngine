@@ -24,7 +24,7 @@ public sealed record TopicStateCount
     /// </summary>
     public double Count { get; }
 
-    // Internal, not private, so the source generated JSON reader of the history can call it.
+    // Internal, not private, so the source generated JSON readers of the history and of the learner model can call it.
     [JsonConstructor]
     internal TopicStateCount(string topic, string stateId, double count)
     {

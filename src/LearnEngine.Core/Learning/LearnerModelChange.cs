@@ -31,8 +31,9 @@ public sealed class LearnerModelChange
     /// </summary>
     public ImmutableArray<TopicStateCount> TopicStates { get; }
 
-    // Internal, not private, so the source generated JSON reader of the history can call it. The effects and the topic
-    // counts may be missing, as in a change kept before they were learned, and read as none.
+    // Internal, not private, so the source generated JSON readers of the history and of the learner model can call it.
+    // The effects and the topic counts may be missing, as in a change or model kept before they were learned, and read
+    // as none.
     [JsonConstructor]
     internal LearnerModelChange(
         ImmutableArray<RateCount> rates,

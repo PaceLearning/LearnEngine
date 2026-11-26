@@ -1,9 +1,9 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Signals;
-using OneOf;
 
 namespace LearnEngine.Core.History;
 
@@ -45,7 +45,7 @@ public sealed class HistoryReplayer
     /// registered signal and a registered move, or has a move picked that is not registered, in a state that is not
     /// registered or with a goal chance outside 0 to 1, gives <see cref="BrokenHistory"/>.
     /// </summary>
-    public OneOf<Belief, OtherVocabulary, BrokenHistory> Replay(ImmutableArray<HistoryEvent> history)
+    public Outcome<Belief, OtherVocabulary, BrokenHistory> Replay(ImmutableArray<HistoryEvent> history)
     {
         if (history.IsDefaultOrEmpty)
             return BrokenHistory.Create(0, "The history is empty, so it has no session start.");
@@ -81,7 +81,7 @@ public sealed class HistoryReplayer
                     return BrokenHistory.Create(index, "What a turn learned does not come right after the turn.");
 
                 var badCount = learned.Added.Rates.FirstOrDefault(count =>
-                    signals.Find(count.SignalId).IsT1
+                    signals.Find(count.SignalId) is UnknownSignal
                     || !stateIds.Contains(count.StateId)
                     || !(count.Shown >= 0 && double.IsFinite(count.Shown))
                     || !(count.NotShown >= 0 && double.IsFinite(count.NotShown)));
@@ -91,7 +91,7 @@ public sealed class HistoryReplayer
                 var badStep = learned.Added.Effects.FirstOrDefault(count =>
                     !stateIds.Contains(count.FromStateId)
                     || !stateIds.Contains(count.ToStateId)
-                    || (count.MoveId is not null && (moves is null || moves.Find(count.MoveId).IsT1))
+                    || (count.MoveId is not null && (moves is null || moves.Find(count.MoveId) is UnknownMove))
                     || !(count.Count >= 0 && double.IsFinite(count.Count)));
                 if (badStep is not null)
                     return BrokenHistory.Create(index, $"What the turn learned adds a count from \"{badStep.FromStateId}\" to \"{badStep.ToStateId}\" after \"{badStep.MoveId}\" that is not registered or not 0 or more.");
@@ -112,7 +112,7 @@ public sealed class HistoryReplayer
                 if (expectedSinceTurn)
                     return BrokenHistory.Create(index, "What was expected of the next turn is kept twice before the turn.");
 
-                var unknownExpectedMove = expected.Expected.MoveId is not null && (moves is null || moves.Find(expected.Expected.MoveId).IsT1);
+                var unknownExpectedMove = expected.Expected.MoveId is not null && (moves is null || moves.Find(expected.Expected.MoveId) is UnknownMove);
                 if (unknownExpectedMove)
                     return BrokenHistory.Create(index, $"What was expected of the next turn assumes a move that is not registered: {expected.Expected.MoveId}.");
 
@@ -136,7 +136,7 @@ public sealed class HistoryReplayer
 
             if (historyEvent is MovePicked picked)
             {
-                var unknownPick = !stateIds.Contains(picked.StateId) || moves is null || moves.Find(picked.MoveId).IsT1;
+                var unknownPick = !stateIds.Contains(picked.StateId) || moves is null || moves.Find(picked.MoveId) is UnknownMove;
                 if (unknownPick)
                     return BrokenHistory.Create(index, $"The move \"{picked.MoveId}\" is picked in \"{picked.StateId}\", and the move or the state is not registered.");
 
@@ -150,16 +150,19 @@ public sealed class HistoryReplayer
             {
                 expectedSinceTurn = false;
 
-                var unknownMove = turn.MoveMade is not null && (moves is null || moves.Find(turn.MoveMade).IsT1);
+                var unknownMove = turn.MoveMade is not null && (moves is null || moves.Find(turn.MoveMade) is UnknownMove);
                 if (unknownMove)
                     return BrokenHistory.Create(index, $"The turn has a move made that is not registered: {turn.MoveMade}.");
 
                 // Applied even when the odds were kept, so a turn with a signal that is not registered is always found.
                 var applied = engine.Apply(engine.Predict(belief, LearnerModel.Empty, turn.MoveMade), LearnerModel.Empty, turn.SignalIds);
-                if (applied.IsT1)
-                    return BrokenHistory.Create(index, $"The turn has signals that are not registered: {string.Join(", ", applied.AsT1.Select(unknown => unknown.Id))}.");
+                if (applied is ImmutableArray<UnknownSignal> unknownSignals)
+                    return BrokenHistory.Create(index, $"The turn has signals that are not registered: {string.Join(", ", unknownSignals.Select(unknown => unknown.Id))}.");
 
-                belief = applied.AsT0;
+                if (applied is not Belief appliedBelief)
+                    throw new UnreachableException();
+
+                belief = appliedBelief;
 
                 var kept = index + 1 < history.Length ? history[index + 1] as TurnLearned : null;
                 if (kept is not null)

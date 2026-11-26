@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Registration;
+using LearnEngine.Core.Signals;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using static LearnEngine.Core.Tests.TestVocabulary;
@@ -41,9 +42,9 @@ public sealed class OddsEngineTests
         // so they cancel out when the odds are rescaled.
         var first = FirstPrior * 0.5 * (1 - 0.2);
         var second = SecondPrior * 0.1 * (1 - 0.4);
-        Assert.True(applied.IsT0);
-        Assert.Equal(first / (first + second), applied.AsT0.All[0].Odds, Precision);
-        Assert.Equal(second / (first + second), applied.AsT0.All[1].Odds, Precision);
+        var belief = Assert.IsType<Belief>(applied.Value);
+        Assert.Equal(first / (first + second), belief.All[0].Odds, Precision);
+        Assert.Equal(second / (first + second), belief.All[1].Odds, Precision);
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public sealed class OddsEngineTests
         var first = FirstPrior * learnerRate * (1 - 0.2);
         var second = SecondPrior * 0.1 * (1 - 0.4);
         Assert.Equal(0.25, learnerRate, Precision);
-        Assert.Equal(first / (first + second), applied.AsT0.All[0].Odds, Precision);
+        Assert.Equal(first / (first + second), Assert.IsType<Belief>(applied.Value).All[0].Odds, Precision);
     }
 
     [Fact]
@@ -74,7 +75,7 @@ public sealed class OddsEngineTests
 
         var first = FirstPrior * (1 - 0.5) * (1 - 0.2);
         var second = SecondPrior * (1 - 0.1) * (1 - 0.4);
-        Assert.Equal(first / (first + second), applied.AsT0.All[0].Odds, Precision);
+        Assert.Equal(first / (first + second), Assert.IsType<Belief>(applied.Value).All[0].Odds, Precision);
     }
 
     [Fact]
@@ -83,8 +84,8 @@ public sealed class OddsEngineTests
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
 
-        var once = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
-        var twice = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst, LeansFirst]).AsT0;
+        var once = Assert.IsType<Belief>(engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).Value);
+        var twice = Assert.IsType<Belief>(engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst, LeansFirst]).Value);
 
         Assert.Equal(once.All[0].Odds, twice.All[0].Odds, Precision);
     }
@@ -97,8 +98,8 @@ public sealed class OddsEngineTests
 
         var applied = engine.Apply(engine.Start(), LearnerModel.Empty, ["not.a.signal", LeansFirst, "another"]);
 
-        Assert.True(applied.IsT1);
-        Assert.Equal(["not.a.signal", "another"], applied.AsT1.Select(unknown => unknown.Id));
+        var unknownSignals = Assert.IsType<ImmutableArray<UnknownSignal>>(applied.Value);
+        Assert.Equal(["not.a.signal", "another"], unknownSignals.Select(unknown => unknown.Id));
     }
 
     [Fact]
@@ -113,7 +114,7 @@ public sealed class OddsEngineTests
         var today = FirstPrior;
         foreach (var turn in turns)
         {
-            predicted = engine.Apply(engine.Predict(predicted, LearnerModel.Empty, null), LearnerModel.Empty, turn).AsT0;
+            predicted = Assert.IsType<Belief>(engine.Apply(engine.Predict(predicted, LearnerModel.Empty, null), LearnerModel.Empty, turn).Value);
 
             // The fade the engine did before every turn until now, then the turn's rates, worked out by hand.
             // went.well and went.badly have the same rate in both states, so they cancel out.
@@ -149,7 +150,7 @@ public sealed class OddsEngineTests
         using var provider = Create(after: services => services
             .AddMoveEffect(First, One, weight: 10, (First, 0.2), (Second, 0.8)));
         var engine = provider.GetRequiredService<OddsEngine>();
-        var certain = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).AsT0;
+        var certain = Assert.IsType<Belief>(engine.Apply(engine.Start(), LearnerModel.Empty, [LeansFirst]).Value);
 
         // 10 steps from the first state that stayed there, on top of the shared 0.2 counted as 10.
         var model = LearnerModel.Create([], [EffectCount.Create(First, One, First, 10)]);
@@ -172,8 +173,8 @@ public sealed class OddsEngineTests
         var exactly = belief.ClearLeader(belief.Margin);
         var below = belief.ClearLeader(0.15);
 
-        Assert.Equal(First, exactly.AsT0.StateId);
-        Assert.Equal(First, below.AsT0.StateId);
+        Assert.Equal(First, Assert.IsType<StateOdds>(exactly.Value).StateId);
+        Assert.Equal(First, Assert.IsType<StateOdds>(below.Value).StateId);
     }
 
     [Fact]
@@ -184,8 +185,8 @@ public sealed class OddsEngineTests
 
         var leader = engine.Start().ClearLeader(0.25);
 
-        Assert.True(leader.IsT1);
-        Assert.Equal(FirstPrior - SecondPrior, leader.AsT1.Margin, Precision);
+        var noClearLeader = Assert.IsType<NoClearLeader>(leader.Value);
+        Assert.Equal(FirstPrior - SecondPrior, noClearLeader.Margin, Precision);
     }
 
     [Fact]
@@ -194,7 +195,7 @@ public sealed class OddsEngineTests
         using var provider = Create();
         var engine = provider.GetRequiredService<OddsEngine>();
         var priors = engine.Start();
-        var farAhead = engine.Apply(priors, LearnerModel.Empty, [LeansFirst]).AsT0;
+        var farAhead = Assert.IsType<Belief>(engine.Apply(priors, LearnerModel.Empty, [LeansFirst]).Value);
 
         // The priors put the first state 0.2 ahead, and one leans.first puts it about 0.82 ahead.
         Assert.True(farAhead.Margin >= Belief.HighConfidenceMargin);
@@ -221,7 +222,7 @@ public sealed class OddsEngineTests
 
         Assert.Equal("later", belief.Leader.StateId);
         Assert.Equal(0, belief.Margin, Precision);
-        Assert.True(belief.ClearLeader(0).IsT0);
-        Assert.True(belief.ClearLeader(0.01).IsT1);
+        Assert.True(belief.ClearLeader(0) is StateOdds);
+        Assert.True(belief.ClearLeader(0.01) is NoClearLeader);
     }
 }

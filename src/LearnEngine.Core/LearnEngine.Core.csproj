@@ -10,15 +10,11 @@
 
   <PropertyGroup>
     <PackageId>LearnEngine.Core</PackageId>
-    <Version>0.3.0-preview.1</Version>
+    <Version>0.4.0-preview.1</Version>
     <Authors>PaceLearning</Authors>
     <Description>Helps an AI tutor decide what to do next: keeps odds on the state a learner is in from the signals the AI reports, and learns which teaching move works for that learner in that state.</Description>
     <RepositoryUrl>https://github.com/PaceLearning/LearnEngine</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="OneOf" />
-  </ItemGroup>
 
 </Project>

@@ -1,6 +1,5 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
-using OneOf;
 
 namespace LearnEngine.Core.States;
 
@@ -32,7 +31,7 @@ public sealed class StateCatalog
     /// <summary>
     /// Finds the state with the given id, or says the id is unknown.
     /// </summary>
-    public OneOf<State, UnknownState> Find(string id)
+    public Outcome<State, UnknownState> Find(string id)
     {
         var state = byId.GetValueOrDefault(id);
         if (state is null)

@@ -95,7 +95,7 @@
                             <td><span class="le-dot" style="background: var(--le-@stateId, var(--pace-fg-4))"></span> @stateId</td>
                             <td class="le-num">@Numbers.Percent(before.All[index].Odds)</td>
                             <td class="le-num">@Numbers.Percent(predicted.All[index].Odds)</td>
-                            <td class="le-num">@string.Join(" and ", exampleSignals.Select(signalId => Numbers.Two(Likelihoods.Find(signalId, stateId).AsT0.Rate)))</td>
+                            <td class="le-num">@string.Join(" and ", exampleSignals.Select(signalId => Numbers.Two((Likelihoods.Find(signalId, stateId) is Likelihood shared ? shared : throw new UnreachableException()).Rate)))</td>
                             <td class="le-num @(change > 0.005 ? "le-up" : change < -0.005 ? "le-down" : "")"><b>@Numbers.Percent(after.All[index].Odds)</b></td>
                         </tr>
                     }
@@ -228,17 +228,26 @@
     protected override void OnInitialized()
     {
         var empty = LearnerModel.Empty;
-        exampleSignals = [.. new[] { "says.dont_get_it", "asks.for_help" }.Where(signalId => Signals.Find(signalId).IsT0)];
-        ImmutableArray<string> first = [.. new[] { "asks.how_or_why" }.Where(signalId => Signals.Find(signalId).IsT0)];
-        ImmutableArray<string> second = [.. new[] { "reply.minimal" }.Where(signalId => Signals.Find(signalId).IsT0)];
+        exampleSignals = [.. new[] { "says.dont_get_it", "asks.for_help" }.Where(signalId => Signals.Find(signalId) is Signal)];
+        ImmutableArray<string> first = [.. new[] { "asks.how_or_why" }.Where(signalId => Signals.Find(signalId) is Signal)];
+        ImmutableArray<string> second = [.. new[] { "reply.minimal" }.Where(signalId => Signals.Find(signalId) is Signal)];
 
-        var afterFirst = Engine.Apply(Engine.Predict(Engine.Start(), empty, null), empty, first).AsT0;
-        before = Engine.Apply(Engine.Predict(afterFirst, empty, null), empty, second).AsT0;
+        // Only registered signals are kept above, so every turn applies.
+        if (Engine.Apply(Engine.Predict(Engine.Start(), empty, null), empty, first) is not Belief afterFirst)
+            throw new UnreachableException();
+
+        if (Engine.Apply(Engine.Predict(afterFirst, empty, null), empty, second) is not Belief afterSecond)
+            throw new UnreachableException();
+
+        before = afterSecond;
         predicted = Engine.Predict(before, empty, null);
-        after = Engine.Apply(predicted, empty, exampleSignals).AsT0;
+        if (Engine.Apply(predicted, empty, exampleSignals) is not Belief afterExample)
+            throw new UnreachableException();
+
+        after = afterExample;
         expected = Predictor.Expect(before, empty, null, null);
 
         var found = Chooser.Weigh(after, empty, after.Leader.StateId);
-        weighed = found.IsT0 ? found.AsT0 : [];
+        weighed = found is ImmutableArray<WeighedMove> allowed ? allowed : [];
     }
 }

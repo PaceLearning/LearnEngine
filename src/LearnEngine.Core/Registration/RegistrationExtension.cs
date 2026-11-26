@@ -214,7 +214,7 @@ public static class RegistrationExtension
             if (states is null)
                 throw new InvalidOperationException($"The states are not added, so \"{stateId}\" cannot be a goal state. Add them with AddStates before AddGoalState.");
 
-            var knownState = states.Find(stateId).IsT0;
+            var knownState = states.Find(stateId) is State;
             if (!knownState)
                 throw new InvalidOperationException($"The state \"{stateId}\" is not added. Add it with AddStates before AddGoalState.");
 
@@ -257,7 +257,7 @@ public static class RegistrationExtension
             if (states is null)
                 throw new InvalidOperationException($"The states are not added, so the effect of \"{moveId}\" in \"{fromStateId}\" cannot be added. Add them with AddStates before AddMoveEffect.");
 
-            var knownState = states.Find(fromStateId).IsT0;
+            var knownState = states.Find(fromStateId) is State;
             if (!knownState)
                 throw new InvalidOperationException($"The state \"{fromStateId}\" is not added. Add it with AddStates before AddMoveEffect.");
 
@@ -288,7 +288,7 @@ public static class RegistrationExtension
             {
                 ArgumentException.ThrowIfNullOrWhiteSpace(toStateId);
 
-                var knownToState = states.Find(toStateId).IsT0;
+                var knownToState = states.Find(toStateId) is State;
                 if (!knownToState)
                     throw new InvalidOperationException($"The state \"{toStateId}\" in the effect of \"{moveId}\" in \"{fromStateId}\" is not added. Add it with AddStates before AddMoveEffect.");
 
@@ -400,7 +400,7 @@ public static class RegistrationExtension
             if (states is null)
                 throw new InvalidOperationException($"The states are not added, so the move \"{moveId}\" cannot be allowed in \"{stateId}\". Add them with AddStates before AddMoveFor.");
 
-            var knownState = states.Find(stateId).IsT0;
+            var knownState = states.Find(stateId) is State;
             if (!knownState)
                 throw new InvalidOperationException($"The state \"{stateId}\" is not added. Add it with AddStates before AddMoveFor.");
 

@@ -1,6 +1,5 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
-using OneOf;
 
 namespace LearnEngine.Core.Signals;
 
@@ -32,7 +31,7 @@ public sealed class SignalCatalog
     /// <summary>
     /// Finds the signal with the given id, or says the id is unknown.
     /// </summary>
-    public OneOf<Signal, UnknownSignal> Find(string id)
+    public Outcome<Signal, UnknownSignal> Find(string id)
     {
         var signal = byId.GetValueOrDefault(id);
         if (signal is null)

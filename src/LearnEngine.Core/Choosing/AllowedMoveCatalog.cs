@@ -1,7 +1,6 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using LearnEngine.Core.States;
-using OneOf;
 
 namespace LearnEngine.Core.Choosing;
 
@@ -39,9 +38,9 @@ public sealed class AllowedMoveCatalog
     /// Finds the moves allowed in the given state, in the order the app registered them.
     /// A state with no moves gives <see cref="NoMovesInState"/>, and an id that is not a state gives <see cref="UnknownState"/>.
     /// </summary>
-    public OneOf<ImmutableArray<AllowedMove>, NoMovesInState, UnknownState> Find(string stateId)
+    public Outcome<ImmutableArray<AllowedMove>, NoMovesInState, UnknownState> Find(string stateId)
     {
-        var unknown = states.Find(stateId).IsT1;
+        var unknown = states.Find(stateId) is UnknownState;
         if (unknown)
             return UnknownState.Create(stateId);
 

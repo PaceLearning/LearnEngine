@@ -19,7 +19,7 @@ public sealed class HistoryEventJsonTests
         var read = HistoryEventJson.Read(line);
 
         Assert.Equal("""{"event":"session_started","fingerprint":"0123456789abcdef","fade":0.15,"clear_margin":0.2}""", line);
-        var start = Assert.IsType<SessionStarted>(read.AsT0);
+        var start = Assert.IsType<SessionStarted>(read.Value);
         Assert.Equal("0123456789abcdef", start.Fingerprint);
         Assert.Equal(0.15, start.Fade);
         Assert.Equal(0.2, start.ClearMargin);
@@ -33,7 +33,7 @@ public sealed class HistoryEventJsonTests
         var read = HistoryEventJson.Read(line);
 
         Assert.Equal("""{"event":"learner_turn","signal_ids":["asks.how_or_why","reply.minimal"]}""", line);
-        var turn = Assert.IsType<LearnerTurn>(read.AsT0);
+        var turn = Assert.IsType<LearnerTurn>(read.Value);
         Assert.Equal(["asks.how_or_why", "reply.minimal"], turn.SignalIds.ToArray());
     }
 
@@ -45,7 +45,7 @@ public sealed class HistoryEventJsonTests
         var read = HistoryEventJson.Read(line);
 
         Assert.Equal("""{"event":"learner_turn","signal_ids":["asks.for_help"],"topic":"recursion.base_case","move_made":"worked_example"}""", line);
-        var turn = Assert.IsType<LearnerTurn>(read.AsT0);
+        var turn = Assert.IsType<LearnerTurn>(read.Value);
         Assert.Equal(["asks.for_help"], turn.SignalIds.ToArray());
         Assert.Equal("recursion.base_case", turn.Topic);
         Assert.Equal("worked_example", turn.MoveMade);
@@ -56,7 +56,7 @@ public sealed class HistoryEventJsonTests
     {
         var read = HistoryEventJson.Read("""{"event":"learner_turn","signal_ids":[]}""");
 
-        var turn = Assert.IsType<LearnerTurn>(read.AsT0);
+        var turn = Assert.IsType<LearnerTurn>(read.Value);
         Assert.Null(turn.Topic);
         Assert.Null(turn.MoveMade);
     }
@@ -100,7 +100,7 @@ public sealed class HistoryEventJsonTests
         var read = HistoryEventJson.Read(line);
 
         Assert.Equal("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":0.75},{"state_id":"following","odds":0.25}],"added":{"rates":[{"signal_id":"asks.for_help","state_id":"stuck","shown":0.75,"not_shown":0}],"effects":[{"from_state_id":"stuck","move_id":"worked_example","to_state_id":"following","count":0.5},{"from_state_id":"stuck","move_id":null,"to_state_id":"stuck","count":0.25}],"topic_links":[],"topic_states":[]}}""", line);
-        var readBack = Assert.IsType<TurnLearned>(read.AsT0);
+        var readBack = Assert.IsType<TurnLearned>(read.Value);
         Assert.Equal(["stuck", "following"], readBack.Odds.Select(stateOdds => stateOdds.StateId));
         Assert.Equal(0.75, readBack.Odds[0].Odds);
         Assert.Equal(RateCount.Create("asks.for_help", "stuck", 0.75, 0), Assert.Single(readBack.Added.Rates));
@@ -114,7 +114,7 @@ public sealed class HistoryEventJsonTests
     {
         var read = HistoryEventJson.Read("""{"event":"turn_learned","odds":[{"state_id":"stuck","odds":1}],"added":{"rates":[]}}""");
 
-        var learned = Assert.IsType<TurnLearned>(read.AsT0);
+        var learned = Assert.IsType<TurnLearned>(read.Value);
         Assert.Empty(learned.Added.Effects);
         Assert.Empty(learned.Added.TopicLinks);
         Assert.Empty(learned.Added.TopicStates);
@@ -133,7 +133,7 @@ public sealed class HistoryEventJsonTests
 
         var read = HistoryEventJson.Read(HistoryEventJson.Write(learned));
 
-        var readBack = Assert.IsType<TurnLearned>(read.AsT0);
+        var readBack = Assert.IsType<TurnLearned>(read.Value);
         Assert.Equal(TopicLinkCount.Create("recursion.base_case", "recursion.call_stack", 1), Assert.Single(readBack.Added.TopicLinks));
         Assert.Equal(TopicStateCount.Create("recursion.call_stack", "stuck", 1), Assert.Single(readBack.Added.TopicStates));
     }
@@ -151,7 +151,7 @@ public sealed class HistoryEventJsonTests
         var read = HistoryEventJson.Read(line);
 
         Assert.Equal("""{"event":"turn_expected","expected":{"move_id":"worked_example","odds":[{"state_id":"stuck","odds":0.25},{"state_id":"following","odds":0.75}],"signals":[{"signal_id":"asks.how_or_why","chance":0.31,"usual":0.2}],"topics":[{"topic":"recursion.base_case","chance":0.55},{"topic":"recursion.call_stack","chance":0.45}]}}""", line);
-        var readBack = Assert.IsType<TurnExpected>(read.AsT0).Expected;
+        var readBack = Assert.IsType<TurnExpected>(read.Value).Expected;
         Assert.Equal("worked_example", readBack.MoveId);
         Assert.Equal(expected.Expected.Odds.AsEnumerable(), readBack.Odds.AsEnumerable());
         Assert.Equal(expected.Expected.Signals.AsEnumerable(), readBack.Signals.AsEnumerable());
@@ -164,7 +164,7 @@ public sealed class HistoryEventJsonTests
     [InlineData("""{"event":"turn_learned","odds":[],"added":{"rates":[],"topic_links":[{"from_topic":"a","to_topic":"not valid","count":1}]}}""")]
     public void Read_TopicNotValidOrNullChance_GivesUnreadableEvent(string line)
     {
-        Assert.True(HistoryEventJson.Read(line).IsT1);
+        Assert.True(HistoryEventJson.Read(line) is UnreadableEvent);
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public sealed class HistoryEventJsonTests
         var read = HistoryEventJson.Read(line);
 
         Assert.Equal("""{"event":"move_picked","state_id":"model_clash","move_id":"ask_their_picture","goal_chance":0.75,"why":"For this learner, ask_their_picture led from model_clash to following 3 of 4 times."}""", line);
-        var picked = Assert.IsType<MovePicked>(read.AsT0);
+        var picked = Assert.IsType<MovePicked>(read.Value);
         Assert.Equal("model_clash", picked.StateId);
         Assert.Equal("ask_their_picture", picked.MoveId);
         Assert.Equal(0.75, picked.GoalChance);
@@ -185,8 +185,8 @@ public sealed class HistoryEventJsonTests
     [Fact]
     public void Read_MoveJudgedOrPickWithoutGoalChance_GivesUnreadableEvent()
     {
-        Assert.True(HistoryEventJson.Read("""{"event":"move_judged","state_id":"following","move_id":"keep_going","worked":false}""").IsT1);
-        Assert.True(HistoryEventJson.Read("""{"event":"move_picked","state_id":"following","move_id":"keep_going"}""").IsT1);
+        Assert.True(HistoryEventJson.Read("""{"event":"move_judged","state_id":"following","move_id":"keep_going","worked":false}""") is UnreadableEvent);
+        Assert.True(HistoryEventJson.Read("""{"event":"move_picked","state_id":"following","move_id":"keep_going"}""") is UnreadableEvent);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public sealed class HistoryEventJsonTests
     {
         var read = HistoryEventJson.Read("""{"signal_ids":["reply.minimal"],"event":"learner_turn"}""");
 
-        var turn = Assert.IsType<LearnerTurn>(read.AsT0);
+        var turn = Assert.IsType<LearnerTurn>(read.Value);
         Assert.Equal(["reply.minimal"], turn.SignalIds.ToArray());
     }
 
@@ -215,8 +215,8 @@ public sealed class HistoryEventJsonTests
     {
         var read = HistoryEventJson.Read(line);
 
-        Assert.True(read.IsT1);
-        Assert.Equal(line, read.AsT1.Line);
+        var unreadable = Assert.IsType<UnreadableEvent>(read.Value);
+        Assert.Equal(line, unreadable.Line);
     }
 
     [Fact]

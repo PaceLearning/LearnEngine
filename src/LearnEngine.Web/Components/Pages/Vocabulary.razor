@@ -80,7 +80,7 @@
                             <td class="le-mono">@signal.Id</td>
                             @foreach (var state in States.All)
                             {
-                                <td class="le-num">@Numbers.Two(Likelihoods.Find(signal.Id, state.Id).AsT0.Rate)</td>
+                                <td class="le-num">@Numbers.Two((Likelihoods.Find(signal.Id, state.Id) is Likelihood shared ? shared : throw new UnreachableException()).Rate)</td>
                             }
                         </tr>
                     }

@@ -1,5 +1,6 @@
 @page "/"
 @page "/sessions/{SessionId}"
+@using LearnEngine.Core.Sessions
 @implements IDisposable
 @inject SessionReader Reader
 @inject FileHistoryStore Histories
@@ -72,7 +73,7 @@
                     @if (view.Pick is not null)
                     {
                         <h3>@view.Pick.MoveId</h3>
-                        <p>@(Moves.Find(view.Pick.MoveId).Match(move => move.Description, unknown => ""))</p>
+                        <p>@(Moves.Find(view.Pick.MoveId) is Move move ? move.Description : "")</p>
                         <p class="le-said">@view.Pick.Why Goal chance @Numbers.Percent(view.Pick.GoalChance).</p>
                     }
                     <div class="le-why">
@@ -269,15 +270,15 @@
         try
         {
             var read = await Reader.Read(Settings.LearnerId, shownId, CancellationToken.None);
-            view = read.IsT0 ? read.AsT0 : null;
-            if (read.IsT1)
+            view = read is SessionView found ? found : null;
+            if (read is SessionNotStarted)
                 problem = "This session has no history.";
 
-            if (read.IsT2)
+            if (read is OtherVocabulary)
                 problem = "This session was kept under another vocabulary, so it is not read back. Its history stays on disk.";
 
-            if (read.IsT3)
-                problem = $"This session's history cannot be read back. {read.AsT3.Reason}";
+            if (read is BrokenHistory broken)
+                problem = $"This session's history cannot be read back. {broken.Reason}";
         }
         catch (IOException)
         {

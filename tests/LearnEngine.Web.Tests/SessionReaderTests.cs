@@ -1,8 +1,10 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using LearnEngine.Core.Choosing;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Prediction;
 using LearnEngine.Core.Registration;
+using LearnEngine.Core.Sessions;
 using LearnEngine.Mcp.Storage;
 using LearnEngine.Mcp.Tools;
 using LearnEngine.Teaching;
@@ -38,8 +40,8 @@ public sealed class SessionReaderTests : IDisposable
         await tools.ReportTurn(sessionId, 2, ["says.dont_get_it", "asks.for_help"], null, "recursion.base_case");
         await tools.ReportTurn(sessionId, 3, ["says.dont_get_it", "asks.for_help"], null, "recursion.call_stack");
 
-        var view = (await reader.Read(Learner, sessionId, CancellationToken.None)).AsT0;
-        var history = (await provider.GetRequiredService<IHistoryStore>().Load(Learner, sessionId, CancellationToken.None)).AsT0;
+        var view = Assert.IsType<SessionView>((await reader.Read(Learner, sessionId, CancellationToken.None)).Value);
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await provider.GetRequiredService<IHistoryStore>().Load(Learner, sessionId, CancellationToken.None)).Value);
 
         Assert.Equal([1, 2, 3], view.Turns.Select(turn => turn.Number));
         Assert.Equal(["recursion.base_case", "recursion.base_case", "recursion.call_stack"], view.Turns.Select(turn => turn.Topic));
@@ -72,12 +74,12 @@ public sealed class SessionReaderTests : IDisposable
         for (var turn = 1; turn <= 3; turn++)
             await tools.ReportTurn(sessionId, turn, ["says.dont_get_it", "asks.for_help"]);
 
-        var view = (await reader.Read(Learner, sessionId, CancellationToken.None)).AsT0;
+        var view = Assert.IsType<SessionView>((await reader.Read(Learner, sessionId, CancellationToken.None)).Value);
 
         Assert.True(view.IsClear);
         Assert.NotNull(view.Pick);
         Assert.Equal(view.Belief.Leader.StateId, view.Pick.StateId);
-        var allowed = provider.GetRequiredService<AllowedMoveCatalog>().Find(view.Pick.StateId).AsT0;
+        var allowed = Assert.IsType<ImmutableArray<AllowedMove>>(provider.GetRequiredService<AllowedMoveCatalog>().Find(view.Pick.StateId).Value);
         Assert.Equal(allowed.Select(move => move.MoveId), view.Weighed.Select(move => move.MoveId));
 
         // Nothing changed the learner's model since the pick, so the highest weighed move is the one picked.
@@ -94,14 +96,14 @@ public sealed class SessionReaderTests : IDisposable
         var first = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
         await tools.ReportTurn(first, 1, ["asks.how_or_why"], null, "recursion.base_case");
         await tools.ReportTurn(first, 2, ["reply.minimal"], null, "recursion.base_case");
-        var before = (await reader.Read(Learner, first, CancellationToken.None)).AsT0;
+        var before = Assert.IsType<SessionView>((await reader.Read(Learner, first, CancellationToken.None)).Value);
 
         // Another session teaches the engine a lot about the same learner.
         var second = ToolAnswers.Read(await tools.StartSession()).GetProperty("sessionId").GetString()!;
         for (var turn = 1; turn <= 10; turn++)
             await tools.ReportTurn(second, turn, ["says.dont_get_it"], null, "recursion.call_stack");
 
-        var after = (await reader.Read(Learner, first, CancellationToken.None)).AsT0;
+        var after = Assert.IsType<SessionView>((await reader.Read(Learner, first, CancellationToken.None)).Value);
 
         Assert.Equal(before.Turns.Select(turn => turn.Odds), after.Turns.Select(turn => turn.Odds));
         Assert.Equal(before.Turns.Select(turn => turn.Surprise), after.Turns.Select(turn => turn.Surprise));
@@ -115,7 +117,7 @@ public sealed class SessionReaderTests : IDisposable
 
         var read = await provider.GetRequiredService<SessionReader>().Read(Learner, "20261123-140200-aaaaaaa", CancellationToken.None);
 
-        Assert.True(read.IsT1);
+        Assert.True(read is SessionNotStarted);
     }
 
     [Fact]
@@ -126,7 +128,7 @@ public sealed class SessionReaderTests : IDisposable
 
         var read = await provider.GetRequiredService<SessionReader>().Read(Learner, "old", CancellationToken.None);
 
-        Assert.Equal("0000000000000000", read.AsT2.Found);
+        Assert.Equal("0000000000000000", Assert.IsType<OtherVocabulary>(read.Value).Found);
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using OneOf;
 
 namespace LearnEngine.Core.History;
 
@@ -20,5 +19,5 @@ public interface IHistoryStore
     /// changed the event, gives <see cref="BrokenHistory"/> at its position, so the engine answers with it instead of
     /// replaying the rest.
     /// </summary>
-    Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken);
+    Task<Outcome<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken);
 }

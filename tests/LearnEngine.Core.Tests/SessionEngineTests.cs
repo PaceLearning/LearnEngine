@@ -1,11 +1,14 @@
 using System.Collections.Immutable;
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
+using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Registration;
 using LearnEngine.Core.Sessions;
+using LearnEngine.Core.Signals;
+using LearnEngine.Core.Topics;
 using Microsoft.Extensions.DependencyInjection;
-using OneOf;
 using Xunit;
 using static LearnEngine.Core.Tests.TestVocabulary;
 
@@ -26,10 +29,10 @@ public sealed class SessionEngineTests
 
         var started = await sessions.StartSession(Learner, Session, CancellationToken.None);
 
-        Assert.True(started.IsT0);
-        Assert.Equal(FirstPrior, started.AsT0.All[0].Odds, 10);
-        Assert.True(started.AsT0.IsClear);
-        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var belief = Assert.IsType<SessionBelief>(started.Value);
+        Assert.Equal(FirstPrior, belief.All[0].Odds, 10);
+        Assert.True(belief.IsClear);
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
         Assert.Collection(history,
             historyEvent => Assert.Equal(provider.GetRequiredService<VocabularyFingerprint>().Value, Assert.IsType<SessionStarted>(historyEvent).Fingerprint),
             historyEvent => Assert.Null(Assert.IsType<TurnExpected>(historyEvent).Expected.MoveId));
@@ -43,13 +46,12 @@ public sealed class SessionEngineTests
         var histories = provider.GetRequiredService<IHistoryStore>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
         await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
-        var before = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var before = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
 
         var started = await sessions.StartSession(Learner, Session, CancellationToken.None);
 
-        Assert.True(started.IsT1);
-        Assert.Equal(SessionAlreadyStarted.Create(Learner, Session), started.AsT1);
-        Assert.Equal(before.Length, (await histories.Load(Learner, Session, CancellationToken.None)).AsT0.Length);
+        Assert.Equal(SessionAlreadyStarted.Create(Learner, Session), Assert.IsType<SessionAlreadyStarted>(started.Value));
+        Assert.Equal(before.Length, Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value).Length);
     }
 
     [Fact]
@@ -61,8 +63,8 @@ public sealed class SessionEngineTests
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
-        Assert.Equal(SessionNotStarted.Create(Learner, Session), reported.AsT2);
-        Assert.Equal(SessionNotStarted.Create(Learner, Session), belief.AsT1);
+        Assert.Equal(SessionNotStarted.Create(Learner, Session), Assert.IsType<SessionNotStarted>(reported.Value));
+        Assert.Equal(SessionNotStarted.Create(Learner, Session), Assert.IsType<SessionNotStarted>(belief.Value));
     }
 
     [Fact]
@@ -75,9 +77,9 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst, "not.a.signal"], null, null, CancellationToken.None);
 
-        Assert.True(reported.IsT1);
-        Assert.Equal("not.a.signal", Assert.Single(reported.AsT1).Id);
-        Assert.DoesNotContain((await histories.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
+        var unknownSignals = Assert.IsType<ImmutableArray<UnknownSignal>>(reported.Value);
+        Assert.Equal("not.a.signal", Assert.Single(unknownSignals).Id);
+        Assert.DoesNotContain(Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value), historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -90,8 +92,8 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], "recursion.base_case", Two, CancellationToken.None);
 
-        Assert.True(reported.IsT0);
-        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        Assert.True(reported is TurnResult);
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
         var turn = Assert.IsType<LearnerTurn>(history[2]);
         Assert.Equal("recursion.base_case", turn.Topic);
         Assert.Equal(Two, turn.MoveMade);
@@ -111,9 +113,8 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], topic, null, CancellationToken.None);
 
-        Assert.True(reported.IsT5);
-        Assert.Equal(topic, reported.AsT5.Topic);
-        Assert.DoesNotContain((await histories.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
+        Assert.Equal(topic, Assert.IsType<InvalidTopic>(reported.Value).Topic);
+        Assert.DoesNotContain(Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value), historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -126,9 +127,8 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, "not_a_move", CancellationToken.None);
 
-        Assert.True(reported.IsT6);
-        Assert.Equal("not_a_move", reported.AsT6.Id);
-        Assert.DoesNotContain((await histories.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
+        Assert.Equal("not_a_move", Assert.IsType<UnknownMove>(reported.Value).Id);
+        Assert.DoesNotContain(Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value), historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -141,12 +141,12 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        Assert.True(reported.IsT0);
-        Assert.Equal(First, reported.AsT0.Belief.Leader.StateId);
-        Assert.True(reported.AsT0.Belief.IsClear);
-        var pick = reported.AsT0.Pick.AsT0;
+        var result = Assert.IsType<TurnResult>(reported.Value);
+        Assert.Equal(First, result.Belief.Leader.StateId);
+        Assert.True(result.Belief.IsClear);
+        var pick = Assert.IsType<PickedMove>(result.Pick.Value);
         Assert.Equal(One, pick.Move.Id);
-        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
         Assert.Collection(history,
             historyEvent => Assert.IsType<SessionStarted>(historyEvent),
             historyEvent => Assert.IsType<TurnExpected>(historyEvent),
@@ -172,9 +172,10 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        var today = engine.Apply(engine.Predict(engine.Start(), LearnerModel.Empty, null), LearnerModel.Empty, [LeansFirst]).AsT0;
-        Assert.Equal(today.All[0].Odds, reported.AsT0.Belief.All[0].Odds, 10);
-        Assert.Equal(today.All[1].Odds, reported.AsT0.Belief.All[1].Odds, 10);
+        var today = Assert.IsType<Belief>(engine.Apply(engine.Predict(engine.Start(), LearnerModel.Empty, null), LearnerModel.Empty, [LeansFirst]).Value);
+        var result = Assert.IsType<TurnResult>(reported.Value);
+        Assert.Equal(today.All[0].Odds, result.Belief.All[0].Odds, 10);
+        Assert.Equal(today.All[1].Odds, result.Belief.All[1].Odds, 10);
     }
 
     [Fact]
@@ -188,7 +189,7 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        var odds = reported.AsT0.Belief.All;
+        var odds = Assert.IsType<TurnResult>(reported.Value).Belief.All;
         var model = await models.Load(Learner, CancellationToken.None);
         var shownInFirst = Assert.Single(model.Rates, count => count.SignalId == LeansFirst && count.StateId == First);
         var notShownInSecond = Assert.Single(model.Rates, count => count.SignalId == LeansSecond && count.StateId == Second);
@@ -198,7 +199,7 @@ public sealed class SessionEngineTests
         Assert.Equal(odds[1].Odds, notShownInSecond.NotShown, 10);
         Assert.Equal(4 * 2, model.Rates.Length);
 
-        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
         var learned = Assert.IsType<TurnLearned>(history[3]);
         Assert.Equal(odds.Select(stateOdds => stateOdds.Odds), learned.Odds.Select(stateOdds => stateOdds.Odds));
         Assert.Equal(model.Rates.Length, learned.Added.Rates.Length);
@@ -220,7 +221,7 @@ public sealed class SessionEngineTests
         Assert.All(model.Effects, count => Assert.Equal(One, count.MoveId));
         Assert.Equal(1, model.Effects.Sum(count => count.Count), 10);
         Assert.Equal(
-            reported.AsT0.Belief.All[1].Odds,
+            Assert.IsType<TurnResult>(reported.Value).Belief.All[1].Odds,
             model.Effects.Where(count => count.ToStateId == Second).Sum(count => count.Count),
             10);
 
@@ -247,7 +248,7 @@ public sealed class SessionEngineTests
         var fadedFirst = FirstPrior;
         var first = fadedFirst * 0.5 * 0.8;
         var second = (1 - fadedFirst) * 0.1 * 0.6;
-        Assert.Equal(first / (first + second), reported.AsT0.Belief.All[0].Odds, 10);
+        Assert.Equal(first / (first + second), Assert.IsType<TurnResult>(reported.Value).Belief.All[0].Odds, 10);
         var model = await models.Load(Learner, CancellationToken.None);
         Assert.All(model.Effects, count => Assert.Null(count.MoveId));
     }
@@ -264,16 +265,17 @@ public sealed class SessionEngineTests
         await sessions.StartSession(Learner, Session, CancellationToken.None);
         await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None);
         var model = await models.Load(Learner, CancellationToken.None);
-        var afterFirst = replayer.Replay((await histories.Load(Learner, Session, CancellationToken.None)).AsT0).AsT0;
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
+        var afterFirst = Assert.IsType<Belief>(replayer.Replay(history).Value);
 
-        var second = await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None);
-        var replayed = await sessions.GetBelief(Learner, Session, CancellationToken.None);
+        var second = Assert.IsType<TurnResult>((await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None)).Value);
+        var replayed = Assert.IsType<SessionBelief>((await sessions.GetBelief(Learner, Session, CancellationToken.None)).Value);
 
-        var learnt = engine.Apply(engine.Predict(afterFirst, model, null), model, [LeansSecond]).AsT0;
-        var shared = engine.Apply(engine.Predict(afterFirst, LearnerModel.Empty, null), LearnerModel.Empty, [LeansSecond]).AsT0;
-        Assert.Equal(learnt.All[0].Odds, second.AsT0.Belief.All[0].Odds, 10);
-        Assert.NotEqual(shared.All[0].Odds, second.AsT0.Belief.All[0].Odds, 10);
-        Assert.Equal(second.AsT0.Belief.All[0].Odds, replayed.AsT0.All[0].Odds, 10);
+        var learnt = Assert.IsType<Belief>(engine.Apply(engine.Predict(afterFirst, model, null), model, [LeansSecond]).Value);
+        var shared = Assert.IsType<Belief>(engine.Apply(engine.Predict(afterFirst, LearnerModel.Empty, null), LearnerModel.Empty, [LeansSecond]).Value);
+        Assert.Equal(learnt.All[0].Odds, second.Belief.All[0].Odds, 10);
+        Assert.NotEqual(shared.All[0].Odds, second.Belief.All[0].Odds, 10);
+        Assert.Equal(second.Belief.All[0].Odds, replayed.All[0].Odds, 10);
     }
 
     [Fact]
@@ -286,8 +288,9 @@ public sealed class SessionEngineTests
         // No signals at all puts the two states close together.
         var reported = await sessions.ReportTurn(Learner, Session, [], null, null, CancellationToken.None);
 
-        Assert.False(reported.AsT0.Belief.IsClear);
-        Assert.True(reported.AsT0.Pick.IsT1);
+        var result = Assert.IsType<TurnResult>(reported.Value);
+        Assert.False(result.Belief.IsClear);
+        Assert.True(result.Pick is NoClearLeader);
     }
 
     [Fact]
@@ -300,7 +303,7 @@ public sealed class SessionEngineTests
 
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, One, CancellationToken.None);
 
-        Assert.True(reported.AsT0.Pick.IsT0);
+        Assert.True(Assert.IsType<TurnResult>(reported.Value).Pick is PickedMove);
     }
 
     [Fact]
@@ -313,7 +316,7 @@ public sealed class SessionEngineTests
 
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
-        Assert.Equal(reported.AsT0.Belief.All[0].Odds, belief.AsT0.All[0].Odds, 10);
+        Assert.Equal(Assert.IsType<TurnResult>(reported.Value).Belief.All[0].Odds, Assert.IsType<SessionBelief>(belief.Value).All[0].Odds, 10);
     }
 
     [Fact]
@@ -328,11 +331,11 @@ public sealed class SessionEngineTests
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
-        Assert.True(reported.IsT3);
-        Assert.Equal(after.GetRequiredService<VocabularyFingerprint>().Value, reported.AsT3.Expected);
-        Assert.Equal(before.GetRequiredService<VocabularyFingerprint>().Value, reported.AsT3.Found);
-        Assert.True(belief.IsT2);
-        Assert.DoesNotContain((await store.Load(Learner, Session, CancellationToken.None)).AsT0, historyEvent => historyEvent is LearnerTurn);
+        var other = Assert.IsType<OtherVocabulary>(reported.Value);
+        Assert.Equal(after.GetRequiredService<VocabularyFingerprint>().Value, other.Expected);
+        Assert.Equal(before.GetRequiredService<VocabularyFingerprint>().Value, other.Found);
+        Assert.True(belief is OtherVocabulary);
+        Assert.DoesNotContain(Assert.IsType<ImmutableArray<HistoryEvent>>((await store.Load(Learner, Session, CancellationToken.None)).Value), historyEvent => historyEvent is LearnerTurn);
     }
 
     [Fact]
@@ -346,10 +349,9 @@ public sealed class SessionEngineTests
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
 
-        Assert.True(started.IsT1);
-        Assert.True(reported.IsT4);
-        Assert.Equal(UnreadableHistoryStore.Broken, reported.AsT4);
-        Assert.True(belief.IsT3);
+        Assert.True(started is SessionAlreadyStarted);
+        Assert.Equal(UnreadableHistoryStore.Broken, Assert.IsType<BrokenHistory>(reported.Value));
+        Assert.True(belief is BrokenHistory);
         Assert.Equal(0, store.Appended);
     }
 
@@ -370,7 +372,7 @@ public sealed class SessionEngineTests
             return Task.CompletedTask;
         }
 
-        public Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken) =>
-            Task.FromResult<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>>(Broken);
+        public Task<Outcome<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult<Outcome<ImmutableArray<HistoryEvent>, BrokenHistory>>(Broken);
     }
 }

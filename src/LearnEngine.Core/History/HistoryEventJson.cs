@@ -1,6 +1,5 @@
 using System.Text.Json;
 using LearnEngine.Core.Topics;
-using OneOf;
 
 namespace LearnEngine.Core.History;
 
@@ -22,7 +21,7 @@ public static class HistoryEventJson
     /// <summary>
     /// Reads one line of JSON written by <see cref="Write"/>, or says why it is not an event the engine knows.
     /// </summary>
-    public static OneOf<HistoryEvent, UnreadableEvent> Read(string line)
+    public static Outcome<HistoryEvent, UnreadableEvent> Read(string line)
     {
         ArgumentNullException.ThrowIfNull(line);
 

@@ -1,10 +1,10 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.States;
-using OneOf;
 
 namespace LearnEngine.Core.Choosing;
 
@@ -44,18 +44,21 @@ public sealed class MoveChooser
     /// the same move. The answer says why, from the learner's counts.
     /// A state with no moves allowed gives <see cref="NoMovesInState"/>, and an id that is not a state gives <see cref="UnknownState"/>.
     /// </summary>
-    public OneOf<PickedMove, NoMovesInState, UnknownState> Choose(Belief belief, LearnerModel model, string stateId)
+    public Outcome<PickedMove, NoMovesInState, UnknownState> Choose(Belief belief, LearnerModel model, string stateId)
     {
         var weighed = Weigh(belief, model, stateId);
-        if (weighed.IsT1)
-            return weighed.AsT1;
+        if (weighed is NoMovesInState noMoves)
+            return noMoves;
 
-        if (weighed.IsT2)
-            return weighed.AsT2;
+        if (weighed is UnknownState unknown)
+            return unknown;
+
+        if (weighed is not ImmutableArray<WeighedMove> all)
+            throw new UnreachableException();
 
         // Only a strictly higher bound replaces the best, so a tie goes to the move allowed first.
-        var best = weighed.AsT0[0];
-        foreach (var move in weighed.AsT0)
+        var best = all[0];
+        foreach (var move in all)
             if (move.Bound > best.Bound)
                 best = move;
 
@@ -68,7 +71,10 @@ public sealed class MoveChooser
             why = $"For this learner, {best.MoveId} led from {stateId} to {goalNames} {intoGoal} of {own} times.";
 
         // Every allowed move is found, because registration checked it was added with AddMove first.
-        return PickedMove.Create(moves.Find(best.MoveId).AsT0, best.GoalChance, best.Bound, why);
+        if (moves.Find(best.MoveId) is not Move found)
+            throw new UnreachableException();
+
+        return PickedMove.Create(found, best.GoalChance, best.Bound, why);
     }
 
     /// <summary>
@@ -77,20 +83,23 @@ public sealed class MoveChooser
     /// evidence and the bonus of each.
     /// A state with no moves allowed gives <see cref="NoMovesInState"/>, and an id that is not a state gives <see cref="UnknownState"/>.
     /// </summary>
-    public OneOf<ImmutableArray<WeighedMove>, NoMovesInState, UnknownState> Weigh(Belief belief, LearnerModel model, string stateId)
+    public Outcome<ImmutableArray<WeighedMove>, NoMovesInState, UnknownState> Weigh(Belief belief, LearnerModel model, string stateId)
     {
         ArgumentNullException.ThrowIfNull(belief);
         ArgumentNullException.ThrowIfNull(model);
         ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
 
         var found = allowedMoves.Find(stateId);
-        if (found.IsT1)
-            return found.AsT1;
+        if (found is NoMovesInState noMoves)
+            return noMoves;
 
-        if (found.IsT2)
-            return found.AsT2;
+        if (found is UnknownState unknown)
+            return unknown;
 
-        var weighed = found.AsT0
+        if (found is not ImmutableArray<AllowedMove> allowedHere)
+            throw new UnreachableException();
+
+        var weighed = allowedHere
             .Select(allowed => (
                 allowed.MoveId,
                 GoalChance: belief.All.Sum(from => from.Odds * goals.StateIds.Sum(goal => model.Effect(effects.For(from.StateId, allowed.MoveId), goal))),

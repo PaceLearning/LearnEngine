@@ -64,7 +64,7 @@
                             <td class="le-mono">@signal.Id</td>
                             @foreach (var state in States.All)
                             {
-                                var shared = Likelihoods.Find(signal.Id, state.Id).AsT0;
+                                var shared = Likelihoods.Find(signal.Id, state.Id) is Likelihood found ? found : throw new UnreachableException();
                                 var own = model.Rate(shared, Learning.RateWeight);
                                 var moved = own - shared.Rate >= 0.005 ? "le-up" : shared.Rate - own >= 0.005 ? "le-down" : "";
                                 <td class="le-num"><b class="@moved">@Numbers.Two(own)</b><small>@Numbers.Two(shared.Rate)</small></td>

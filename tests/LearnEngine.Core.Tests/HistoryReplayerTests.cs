@@ -27,11 +27,11 @@ public sealed class HistoryReplayerTests
             MovePicked.Create(First, One, 0.6, "Why one."),
             LearnerTurn.Create([])]);
 
-        var afterOne = engine.Apply(engine.Predict(engine.Start(), LearnerModel.Empty, null), LearnerModel.Empty, [LeansFirst]).AsT0;
-        var afterTwo = engine.Apply(engine.Predict(afterOne, LearnerModel.Empty, null), LearnerModel.Empty, []).AsT0;
-        Assert.True(replayed.IsT0);
-        Assert.Equal(afterTwo.All[0].Odds, replayed.AsT0.All[0].Odds, 10);
-        Assert.Equal(afterTwo.All[1].Odds, replayed.AsT0.All[1].Odds, 10);
+        var afterOne = Assert.IsType<Belief>(engine.Apply(engine.Predict(engine.Start(), LearnerModel.Empty, null), LearnerModel.Empty, [LeansFirst]).Value);
+        var afterTwo = Assert.IsType<Belief>(engine.Apply(engine.Predict(afterOne, LearnerModel.Empty, null), LearnerModel.Empty, []).Value);
+        var belief = Assert.IsType<Belief>(replayed.Value);
+        Assert.Equal(afterTwo.All[0].Odds, belief.All[0].Odds, 10);
+        Assert.Equal(afterTwo.All[1].Odds, belief.All[1].Odds, 10);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([SessionStarted.Create(fingerprint, Fade, 0.15)]);
 
-        Assert.Equal(FirstPrior, replayed.AsT0.All[0].Odds, 10);
+        Assert.Equal(FirstPrior, Assert.IsType<Belief>(replayed.Value).All[0].Odds, 10);
     }
 
     [Fact]
@@ -54,8 +54,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(0, replayed.AsT2.EventIndex);
+        Assert.Equal(0, Assert.IsType<BrokenHistory>(replayed.Value).EventIndex);
     }
 
     [Fact]
@@ -66,8 +65,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([LearnerTurn.Create([LeansFirst])]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(0, replayed.AsT2.EventIndex);
+        Assert.Equal(0, Assert.IsType<BrokenHistory>(replayed.Value).EventIndex);
     }
 
     [Fact]
@@ -79,8 +77,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([start, LearnerTurn.Create([]), start]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(2, replayed.AsT2.EventIndex);
+        Assert.Equal(2, Assert.IsType<BrokenHistory>(replayed.Value).EventIndex);
     }
 
     [Fact]
@@ -92,9 +89,9 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([start, LearnerTurn.Create([LeansFirst]), LearnerTurn.Create(["not.a.signal"])]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(2, replayed.AsT2.EventIndex);
-        Assert.Contains("not.a.signal", replayed.AsT2.Reason);
+        var broken = Assert.IsType<BrokenHistory>(replayed.Value);
+        Assert.Equal(2, broken.EventIndex);
+        Assert.Contains("not.a.signal", broken.Reason);
     }
 
     [Fact]
@@ -109,8 +106,9 @@ public sealed class HistoryReplayerTests
             LearnerTurn.Create([LeansFirst]),
             TurnLearned.Create([StateOdds.Create(First, 0.3), StateOdds.Create(Second, 0.7)], LearnerModelChange.Create([], []))]);
 
-        Assert.Equal(0.3, replayed.AsT0.All[0].Odds, 10);
-        Assert.Equal(Second, replayed.AsT0.Leader.StateId);
+        var belief = Assert.IsType<Belief>(replayed.Value);
+        Assert.Equal(0.3, belief.All[0].Odds, 10);
+        Assert.Equal(Second, belief.Leader.StateId);
     }
 
     [Fact]
@@ -124,8 +122,7 @@ public sealed class HistoryReplayerTests
             start,
             TurnLearned.Create([StateOdds.Create(First, 0.3), StateOdds.Create(Second, 0.7)], LearnerModelChange.Create([], []))]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(1, replayed.AsT2.EventIndex);
+        Assert.Equal(1, Assert.IsType<BrokenHistory>(replayed.Value).EventIndex);
     }
 
     [Theory]
@@ -143,8 +140,7 @@ public sealed class HistoryReplayerTests
             LearnerTurn.Create([]),
             TurnLearned.Create([StateOdds.Create(First, first), StateOdds.Create(Second, second)], LearnerModelChange.Create([], []))]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(2, replayed.AsT2.EventIndex);
+        Assert.Equal(2, Assert.IsType<BrokenHistory>(replayed.Value).EventIndex);
     }
 
     [Fact]
@@ -165,9 +161,8 @@ public sealed class HistoryReplayerTests
                 [StateOdds.Create(First, 0.5), StateOdds.Create(Second, 0.5)],
                 LearnerModelChange.Create([RateCount.Create("not.a.signal", First, 0.5, 0)], []))]);
 
-        Assert.True(outOfOrder.IsT2);
-        Assert.True(unknownSignal.IsT2);
-        Assert.Contains("not.a.signal", unknownSignal.AsT2.Reason);
+        Assert.True(outOfOrder is BrokenHistory);
+        Assert.Contains("not.a.signal", Assert.IsType<BrokenHistory>(unknownSignal.Value).Reason);
     }
 
     [Fact]
@@ -191,10 +186,11 @@ public sealed class HistoryReplayerTests
             LearnerTurn.Create([], null, One),
             TurnLearned.Create(odds, LearnerModelChange.Create([], [EffectCount.Create(First, One, Second, 0.5)]))]);
 
-        Assert.Equal(2, unknownState.AsT2.EventIndex);
-        Assert.Contains("not_a_state", unknownState.AsT2.Reason);
-        Assert.Contains("not_a_move", unknownMove.AsT2.Reason);
-        Assert.True(known.IsT0);
+        var brokenState = Assert.IsType<BrokenHistory>(unknownState.Value);
+        Assert.Equal(2, brokenState.EventIndex);
+        Assert.Contains("not_a_state", brokenState.Reason);
+        Assert.Contains("not_a_move", Assert.IsType<BrokenHistory>(unknownMove.Value).Reason);
+        Assert.True(known is Belief);
     }
 
     [Fact]
@@ -206,9 +202,9 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([start, LearnerTurn.Create([LeansFirst], "a.topic", One), LearnerTurn.Create([], null, "not_a_move")]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(2, replayed.AsT2.EventIndex);
-        Assert.Contains("not_a_move", replayed.AsT2.Reason);
+        var broken = Assert.IsType<BrokenHistory>(replayed.Value);
+        Assert.Equal(2, broken.EventIndex);
+        Assert.Contains("not_a_move", broken.Reason);
     }
 
     [Theory]
@@ -224,8 +220,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([start, LearnerTurn.Create([LeansFirst]), MovePicked.Create(stateId, moveId, goalChance, "Why.")]);
 
-        Assert.True(replayed.IsT2);
-        Assert.Equal(2, replayed.AsT2.EventIndex);
+        Assert.Equal(2, Assert.IsType<BrokenHistory>(replayed.Value).EventIndex);
     }
 
     [Theory]
@@ -239,7 +234,7 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([SessionStarted.Create(fingerprint, fade, clearMargin)]);
 
-        Assert.True(replayed.IsT2);
+        Assert.True(replayed is BrokenHistory);
     }
 
     [Fact]
@@ -251,9 +246,9 @@ public sealed class HistoryReplayerTests
 
         var replayed = replayer.Replay([SessionStarted.Create("0000000000000000", Fade, 0.15)]);
 
-        Assert.True(replayed.IsT1);
-        Assert.Equal(fingerprint, replayed.AsT1.Expected);
-        Assert.Equal("0000000000000000", replayed.AsT1.Found);
+        var other = Assert.IsType<OtherVocabulary>(replayed.Value);
+        Assert.Equal(fingerprint, other.Expected);
+        Assert.Equal("0000000000000000", other.Found);
     }
 
     [Fact]

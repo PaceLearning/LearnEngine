@@ -1,6 +1,5 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
-using OneOf;
 
 namespace LearnEngine.Core.Moves;
 
@@ -32,7 +31,7 @@ public sealed class MoveCatalog
     /// <summary>
     /// Finds the move with the given id, or says the id is unknown.
     /// </summary>
-    public OneOf<Move, UnknownMove> Find(string id)
+    public Outcome<Move, UnknownMove> Find(string id)
     {
         var move = byId.GetValueOrDefault(id);
         if (move is null)

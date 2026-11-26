@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
+using System.Diagnostics;
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Moves;
@@ -53,7 +55,7 @@ public sealed class LearnTools(
         var sessionId = $"{now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}"[..22];
 
         var started = await engine.StartSession(settings.LearnerId, sessionId, cancellationToken);
-        if (started.IsT1)
+        if (started is SessionAlreadyStarted)
             return ToolResults.Error("A session with the same id was already open. Call start_session again.");
 
         await compliance.Append(settings.LearnerId, sessionId, ComplianceEntry.Started(now), cancellationToken);
@@ -102,7 +104,7 @@ public sealed class LearnTools(
 
         ImmutableArray<string> unknown = [.. signals
             .Select(signalId => signalId ?? "null")
-            .Where(signalId => signalCatalog.Find(signalId).IsT1)
+            .Where(signalId => signalCatalog.Find(signalId) is UnknownSignal)
             .Distinct(StringComparer.Ordinal)];
         if (unknown.Length > 0)
             return ToolResults.Error($"Unknown signal ids: {string.Join(", ", unknown)}. Nothing was recorded. Call report_turn again for turn {turn} with ids from this list only: {string.Join(", ", signalCatalog.All.Select(signal => signal.Id))}.");
@@ -114,7 +116,7 @@ public sealed class LearnTools(
 
         // Only a registered move reaches the engine, so a move id the AI made up counts as no move made.
         string? moveMade = null;
-        if (lastMoveId is not null && moves.Find(lastMoveId).IsT0)
+        if (lastMoveId is not null && moves.Find(lastMoveId) is Move)
         {
             usedMove = lastMoveId;
             moveMade = lastMoveId;
@@ -129,7 +131,7 @@ public sealed class LearnTools(
             var moveSent = last?.MoveGiven;
 
             var reported = await engine.ReportTurn(settings.LearnerId, sessionId, signals, topic, moveMade, cancellationToken);
-            var opened = reported.IsT2;
+            var opened = reported is SessionNotStarted;
             if (opened)
             {
                 await engine.StartSession(settings.LearnerId, sessionId, cancellationToken);
@@ -141,26 +143,28 @@ public sealed class LearnTools(
                 moveSent = null;
             }
 
-            if (reported.IsT1)
-                return ToolResults.Error($"Unknown signal ids: {string.Join(", ", reported.AsT1.Select(signal => signal.Id))}. Nothing was recorded. Call report_turn again with ids from the list start_session returned.");
+            if (reported is ImmutableArray<UnknownSignal> unknownSignals)
+                return ToolResults.Error($"Unknown signal ids: {string.Join(", ", unknownSignals.Select(signal => signal.Id))}. Nothing was recorded. Call report_turn again with ids from the list start_session returned.");
 
-            if (reported.IsT2)
+            if (reported is SessionNotStarted)
                 return ToolResults.Error("The session could not be opened. Call start_session and report this message as turn 1 of the new session.");
 
-            if (reported.IsT3)
+            if (reported is OtherVocabulary)
                 return ToolResults.Error("This session was kept under an older vocabulary and cannot go on. Call start_session and report this message as turn 1 of the new session.");
 
-            if (reported.IsT4)
+            if (reported is BrokenHistory)
                 return ToolResults.Error("This session's history cannot be read, so it cannot go on. Call start_session and report this message as turn 1 of the new session.");
 
             // Both are checked above, so the engine only gives them if its checks and the ones here ever differ.
-            if (reported.IsT5)
+            if (reported is InvalidTopic)
                 return ToolResults.Error($"The topic \"{topic}\" is not valid. Nothing was recorded. Call report_turn again for turn {turn} with another topic or none.");
 
-            if (reported.IsT6)
+            if (reported is UnknownMove)
                 return ToolResults.Error($"The move \"{lastMoveId}\" is not known. Nothing was recorded. Call report_turn again for turn {turn} without lastMoveId.");
 
-            var result = reported.AsT0;
+            if (reported is not TurnResult result)
+                throw new UnreachableException();
+
             var belief = result.Belief;
 
             // A skipped stretch is listed up to 100 turns, so a wild turn number cannot fill the answer or the log.
@@ -173,10 +177,10 @@ public sealed class LearnTools(
 
             MoveToMake? move = null;
             string? why = null;
-            if (belief.IsClear && result.Pick.IsT0)
+            if (belief.IsClear && result.Pick is PickedMove picked)
             {
-                move = MoveToMake.Create(result.Pick.AsT0.Move.Id, result.Pick.AsT0.Move.Description);
-                why = result.Pick.AsT0.Why;
+                move = MoveToMake.Create(picked.Move.Id, picked.Move.Description);
+                why = picked.Why;
             }
 
             // The confidence of what is expected uses the session's clear margin, as the confidence of the state does.
@@ -201,7 +205,7 @@ public sealed class LearnTools(
             var runnerUp = belief.RunnerUp;
             var summary = $"unclear: {leader.StateId} {Math.Round(leader.Odds * 100)}% or {runnerUp?.StateId} {Math.Round((runnerUp?.Odds ?? 0) * 100)}%";
             if (belief.IsClear)
-                summary = $"{leader.StateId} {Math.Round(leader.Odds * 100)}%: {states.Find(leader.StateId).AsT0.Description}";
+                summary = $"{leader.StateId} {Math.Round(leader.Odds * 100)}%: {(states.Find(leader.StateId) is State state ? state : throw new UnreachableException()).Description}";
 
             var confidence = belief.Confidence switch
             {
@@ -269,10 +273,12 @@ public sealed class LearnTools(
         try
         {
             var loaded = await histories.Load(settings.LearnerId, sessionId, cancellationToken);
-            if (loaded.IsT1)
+            if (loaded is BrokenHistory)
                 return ToolResults.Error("This session's history cannot be read, so LearnEngine cannot say how many messages it recorded. Tell the student the session ended.");
 
-            var history = loaded.AsT0;
+            if (loaded is not ImmutableArray<HistoryEvent> history)
+                throw new UnreachableException();
+
             var recorded = history.Count(historyEvent => historyEvent is LearnerTurn);
             var last = await compliance.Last(settings.LearnerId, sessionId, cancellationToken);
             var sent = Math.Max(last?.HighestTurn ?? 0, recorded);

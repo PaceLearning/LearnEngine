@@ -87,6 +87,6 @@ public sealed class SessionView
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentNullException.ThrowIfNull(belief);
-        return new(sessionId, clearMargin, belief, belief.ClearLeader(clearMargin).IsT0, pick, weighed, expectedNext, turns);
+        return new(sessionId, clearMargin, belief, belief.ClearLeader(clearMargin) is StateOdds, pick, weighed, expectedNext, turns);
     }
 }

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
+using LearnEngine.Core;
 using LearnEngine.Core.History;
-using OneOf;
 
 namespace LearnEngine.Mcp.Storage;
 
@@ -63,7 +64,7 @@ public sealed class FileHistoryStore : IHistoryStore
     }
 
     /// <inheritdoc/>
-    public async Task<OneOf<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken)
+    public async Task<Outcome<ImmutableArray<HistoryEvent>, BrokenHistory>> Load(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         if (!FileNames.IsSafe(learnerId) || !FileNames.IsSafe(sessionId))
             throw new ArgumentException($"The learner id \"{learnerId}\" or the session id \"{sessionId}\" is not a safe file name.");
@@ -82,10 +83,13 @@ public sealed class FileHistoryStore : IHistoryStore
             // A line the engine cannot read means the file was changed by hand or cut short, and replaying the rest
             // would give a belief the session never had, so the session stops here instead.
             var read = HistoryEventJson.Read(lines[index]);
-            if (read.IsT1)
-                return BrokenHistory.Create(history.Count, $"Line {index + 1} of {path} is not a history event: {read.AsT1.Reason}");
+            if (read is UnreadableEvent unreadable)
+                return BrokenHistory.Create(history.Count, $"Line {index + 1} of {path} is not a history event: {unreadable.Reason}");
 
-            history.Add(read.AsT0);
+            if (read is not HistoryEvent historyEvent)
+                throw new UnreachableException();
+
+            history.Add(historyEvent);
         }
 
         return history.ToImmutable();

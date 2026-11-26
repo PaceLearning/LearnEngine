@@ -1,3 +1,4 @@
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Registration;
@@ -32,10 +33,10 @@ var models = provider.GetRequiredService<ILearnerModelStore>();
 
 const string learner = "sam";
 var started = await engine.StartSession(learner, "first", CancellationToken.None);
-if (started.IsT1)
+if (started is not SessionBelief opened)
     return;
 
-var priors = string.Join(", ", started.AsT0.All.Select(stateOdds => $"{stateOdds.StateId} {Math.Round(stateOdds.Odds * 100)}%"));
+var priors = string.Join(", ", opened.All.Select(stateOdds => $"{stateOdds.StateId} {Math.Round(stateOdds.Odds * 100)}%"));
 Console.WriteLine($"Session started. The odds before Sam says anything: {priors}.");
 Console.WriteLine();
 
@@ -45,10 +46,9 @@ for (var index = 0; index < turns.Length; index++)
     var (says, signals, topic) = turns[index];
     var reported = await engine.ReportTurn(learner, "first", signals, topic, moveMade, CancellationToken.None);
     // Every id above is in the vocabulary and the session is started, so the turn is always kept.
-    if (!reported.IsT0)
+    if (reported is not TurnResult result)
         return;
 
-    var result = reported.AsT0;
     var belief = result.Belief;
     Console.WriteLine($"Sam ({index + 1}): {says}");
     Console.WriteLine($"  reported: {string.Join(", ", signals)} on {topic}, after {moveMade ?? "no move"}");
@@ -58,17 +58,17 @@ for (var index = 0; index < turns.Length; index++)
         state = $"{belief.Leader.StateId} {Math.Round(belief.Leader.Odds * 100)}%, clear by {Math.Round(belief.Margin * 100)} points";
     Console.WriteLine($"  state: {state}, confidence {belief.Confidence.ToString().ToLowerInvariant()}");
 
-    if (result.Pick.IsT0)
+    if (result.Pick is PickedMove picked)
     {
-        Console.WriteLine($"  move: {result.Pick.AsT0.Move.Id}, goal chance {Math.Round(result.Pick.AsT0.GoalChance * 100)}%. {result.Pick.AsT0.Move.Description}");
-        Console.WriteLine($"  why: {result.Pick.AsT0.Why}");
+        Console.WriteLine($"  move: {picked.Move.Id}, goal chance {Math.Round(picked.GoalChance * 100)}%. {picked.Move.Description}");
+        Console.WriteLine($"  why: {picked.Why}");
     }
 
-    if (result.Pick.IsT1)
+    if (result.Pick is NoClearLeader)
         Console.WriteLine("  move: none, the state is not clear. Teach as usual and answer what Sam asks for.");
 
-    if (result.Pick.IsT2)
-        Console.WriteLine($"  move: none, no move is allowed in {result.Pick.AsT2.StateId}.");
+    if (result.Pick is NoMovesInState noMoves)
+        Console.WriteLine($"  move: none, no move is allowed in {noMoves.StateId}.");
 
     // The signals likelier than usual and the topics are what the AI can get ready for. The confidence uses the same
     // clear margin as the state's.
@@ -80,7 +80,7 @@ for (var index = 0; index < turns.Length; index++)
     Console.WriteLine($"  this turn's surprise: {result.Surprise:0.00}");
     Console.WriteLine();
 
-    moveMade = result.Pick.IsT0 ? result.Pick.AsT0.Move.Id : null;
+    moveMade = result.Pick is PickedMove next ? next.Move.Id : null;
 }
 
 // The learner model outlives the session. The next session starts with the topics Sam has had, so the AI reuses their

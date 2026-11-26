@@ -259,11 +259,11 @@ public sealed class RegistrationTests
         var rateOfUnknownSignal = provider.GetRequiredService<LikelihoodTable>().Find("not.a.signal", First);
         var rateInUnknownState = provider.GetRequiredService<LikelihoodTable>().Find(LeansFirst, "not_a_state");
 
-        Assert.Equal(UnknownSignal.Create("not.a.signal"), signal.AsT1);
-        Assert.Equal(UnknownState.Create("not_a_state"), state.AsT1);
-        Assert.Equal(UnknownMove.Create("not_a_move"), move.AsT1);
-        Assert.Equal(UnknownSignal.Create("not.a.signal"), rateOfUnknownSignal.AsT1);
-        Assert.Equal(UnknownState.Create("not_a_state"), rateInUnknownState.AsT2);
+        Assert.Equal(UnknownSignal.Create("not.a.signal"), Assert.IsType<UnknownSignal>(signal.Value));
+        Assert.Equal(UnknownState.Create("not_a_state"), Assert.IsType<UnknownState>(state.Value));
+        Assert.Equal(UnknownMove.Create("not_a_move"), Assert.IsType<UnknownMove>(move.Value));
+        Assert.Equal(UnknownSignal.Create("not.a.signal"), Assert.IsType<UnknownSignal>(rateOfUnknownSignal.Value));
+        Assert.Equal(UnknownState.Create("not_a_state"), Assert.IsType<UnknownState>(rateInUnknownState.Value));
     }
 
     [Fact]
@@ -274,7 +274,7 @@ public sealed class RegistrationTests
         var state = provider.GetRequiredService<StateCatalog>().Find(Second);
         var rate = provider.GetRequiredService<LikelihoodTable>().Find(LeansSecond, Second);
 
-        Assert.Equal(SecondPrior, state.AsT0.Prior);
-        Assert.Equal(0.4, rate.AsT0.Rate);
+        Assert.Equal(SecondPrior, Assert.IsType<State>(state.Value).Prior);
+        Assert.Equal(0.4, Assert.IsType<Likelihood>(rate.Value).Rate);
     }
 }

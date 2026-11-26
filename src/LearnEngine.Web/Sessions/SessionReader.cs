@@ -1,9 +1,11 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
+using LearnEngine.Core;
 using LearnEngine.Core.Choosing;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
+using LearnEngine.Core.Odds;
 using LearnEngine.Core.Sessions;
-using OneOf;
 
 namespace LearnEngine.Web.Sessions;
 
@@ -38,22 +40,27 @@ public sealed class SessionReader
     /// kept under another vocabulary gives <see cref="OtherVocabulary"/>, and one that cannot be read back or replayed
     /// gives <see cref="BrokenHistory"/>.
     /// </summary>
-    public async Task<OneOf<SessionView, SessionNotStarted, OtherVocabulary, BrokenHistory>> Read(string learnerId, string sessionId, CancellationToken cancellationToken)
+    public async Task<Outcome<SessionView, SessionNotStarted, OtherVocabulary, BrokenHistory>> Read(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
-        if (loaded.IsT1)
-            return loaded.AsT1;
+        if (loaded is BrokenHistory unreadable)
+            return unreadable;
 
-        var history = loaded.AsT0;
+        if (loaded is not ImmutableArray<HistoryEvent> history)
+            throw new UnreachableException();
+
         if (history.IsDefaultOrEmpty)
             return SessionNotStarted.Create(learnerId, sessionId);
 
         var replayed = replayer.Replay(history);
-        if (replayed.IsT1)
-            return replayed.AsT1;
+        if (replayed is OtherVocabulary other)
+            return other;
 
-        if (replayed.IsT2)
-            return replayed.AsT2;
+        if (replayed is BrokenHistory broken)
+            return broken;
+
+        if (replayed is not Belief belief)
+            throw new UnreachableException();
 
         // The replay checked the history begins with a session start.
         var start = (SessionStarted)history[0];
@@ -77,15 +84,14 @@ public sealed class SessionReader
                 start.ClearMargin));
         }
 
-        var belief = replayed.AsT0;
         var leader = belief.ClearLeader(start.ClearMargin);
         ImmutableArray<WeighedMove> weighed = [];
-        if (leader.IsT0)
+        if (leader is StateOdds clear)
         {
             var model = await models.Load(learnerId, cancellationToken);
-            var found = chooser.Weigh(belief, model, leader.AsT0.StateId);
-            if (found.IsT0)
-                weighed = found.AsT0;
+            var found = chooser.Weigh(belief, model, clear.StateId);
+            if (found is ImmutableArray<WeighedMove> allowedNow)
+                weighed = allowedNow;
         }
 
         var expectedNext = (history.LastOrDefault(historyEvent => historyEvent is LearnerTurn or TurnExpected) as TurnExpected)?.Expected;

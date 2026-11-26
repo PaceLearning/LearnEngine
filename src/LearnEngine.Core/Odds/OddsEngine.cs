@@ -1,10 +1,10 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Likelihoods;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
-using OneOf;
 
 namespace LearnEngine.Core.Odds;
 
@@ -69,7 +69,7 @@ public sealed class OddsEngine
     /// A signal reported twice counts once. Ids that are not registered give the unknown signals, in the order reported,
     /// and leave the belief as it was.
     /// </summary>
-    public OneOf<Belief, ImmutableArray<UnknownSignal>> Apply(Belief belief, LearnerModel model, IEnumerable<string> signalIds)
+    public Outcome<Belief, ImmutableArray<UnknownSignal>> Apply(Belief belief, LearnerModel model, IEnumerable<string> signalIds)
     {
         ArgumentNullException.ThrowIfNull(belief);
         ArgumentNullException.ThrowIfNull(model);
@@ -78,7 +78,7 @@ public sealed class OddsEngine
         var reported = signalIds.Distinct(StringComparer.Ordinal).ToList();
 
         ImmutableArray<UnknownSignal> unknown = [.. reported
-            .Where(signalId => signals.Find(signalId).IsT1)
+            .Where(signalId => signals.Find(signalId) is UnknownSignal)
             .Select(UnknownSignal.Create)];
         if (unknown.Length > 0)
             return unknown;
@@ -90,7 +90,10 @@ public sealed class OddsEngine
             foreach (var signal in signals.All)
             {
                 // Every signal has a rate in every state, because registration checked the table is whole.
-                var rate = model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId).AsT0, rateWeight);
+                if (likelihoods.Find(signal.Id, stateOdds.StateId) is not Likelihood likelihood)
+                    throw new UnreachableException();
+
+                var rate = model.Rate(likelihood, rateWeight);
                 var showedUp = reported.Contains(signal.Id);
                 odds *= showedUp ? rate : 1 - rate;
             }

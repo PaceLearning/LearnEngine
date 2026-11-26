@@ -57,5 +57,5 @@ public sealed class SessionBelief
 
     // Internal so a session belief only comes from the engine, with the clear margin stamped on the session.
     internal static SessionBelief Create(Belief belief, double clearMargin) =>
-        new(belief.All, belief.Leader, belief.RunnerUp, belief.Margin, clearMargin, belief.ClearLeader(clearMargin).IsT0, belief.Confidence(clearMargin));
+        new(belief.All, belief.Leader, belief.RunnerUp, belief.Margin, clearMargin, belief.ClearLeader(clearMargin) is StateOdds, belief.Confidence(clearMargin));
 }

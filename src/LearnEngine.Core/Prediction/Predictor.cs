@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Likelihoods;
@@ -60,8 +61,8 @@ public sealed class Predictor
         // Every signal has a rate in every state, because registration checked the table is whole.
         var expectedSignals = signals.All.Select(signal => SignalChance.Create(
             signal.Id,
-            predicted.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId).AsT0, rateWeight)),
-            priors.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId).AsT0, rateWeight))));
+            predicted.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId) is Likelihood likelihood ? likelihood : throw new UnreachableException(), rateWeight)),
+            priors.All.Sum(stateOdds => stateOdds.Odds * model.Rate(likelihoods.Find(signal.Id, stateOdds.StateId) is Likelihood likelihood ? likelihood : throw new UnreachableException(), rateWeight))));
 
         var candidates = (lastTopic is null ? model.Topics : model.Topics.Add(lastTopic)).Distinct(StringComparer.Ordinal);
         var weighed = candidates

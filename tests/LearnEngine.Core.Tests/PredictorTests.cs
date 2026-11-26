@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
@@ -60,8 +61,8 @@ public sealed class PredictorTests
         using var provider = Create();
         var predictor = provider.GetRequiredService<Predictor>();
         var engine = provider.GetRequiredService<OddsEngine>();
-        var once = engine.Apply(engine.Start(), LearnerModel.Empty, [LeansSecond]).AsT0;
-        var twice = engine.Apply(engine.Predict(once, LearnerModel.Empty, null), LearnerModel.Empty, [LeansSecond]).AsT0;
+        var once = Assert.IsType<Belief>(engine.Apply(engine.Start(), LearnerModel.Empty, [LeansSecond]).Value);
+        var twice = Assert.IsType<Belief>(engine.Apply(engine.Predict(once, LearnerModel.Empty, null), LearnerModel.Empty, [LeansSecond]).Value);
 
         var expected = predictor.Expect(twice, LearnerModel.Empty, null, null);
 
@@ -84,7 +85,7 @@ public sealed class PredictorTests
 
         var read = HistoryEventJson.Read(line);
 
-        var expected = Assert.IsType<TurnExpected>(read.AsT0).Expected;
+        var expected = Assert.IsType<TurnExpected>(read.Value).Expected;
         Assert.Equal(0, Assert.Single(expected.Signals).Usual);
         Assert.Empty(expected.AboveUsual);
     }
@@ -100,22 +101,22 @@ public sealed class PredictorTests
         await sessions.StartSession(Learner, Session, CancellationToken.None);
         await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
-        var second = await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None);
+        var second = Assert.IsType<TurnResult>((await sessions.ReportTurn(Learner, Session, [LeansSecond], null, null, CancellationToken.None)).Value);
 
         // The expectation of the third turn, worked out by hand from the odds after the second, the move picked and the
         // learner's model with both turns added.
         var model = await models.Load(Learner, CancellationToken.None);
-        var moveNext = second.AsT0.Pick.IsT0 ? second.AsT0.Pick.AsT0.Move.Id : null;
-        var odds = second.AsT0.Belief.All;
+        var moveNext = second.Pick is PickedMove picked ? picked.Move.Id : null;
+        var odds = second.Belief.All;
         var fromFirst = effects.For(First, moveNext);
         var fromSecond = effects.For(Second, moveNext);
         var predictedFirst = odds[0].Odds * model.Effect(fromFirst, First) + odds[1].Odds * model.Effect(fromSecond, First);
         var predictedSecond = odds[0].Odds * model.Effect(fromFirst, Second) + odds[1].Odds * model.Effect(fromSecond, Second);
-        var rateInFirst = model.Rate(likelihoods.Find(LeansFirst, First).AsT0, LearningOptions.DefaultRateWeight);
-        var rateInSecond = model.Rate(likelihoods.Find(LeansFirst, Second).AsT0, LearningOptions.DefaultRateWeight);
-        Assert.Equal(predictedFirst, second.AsT0.Expected.Odds[0].Odds, Precision);
-        Assert.Equal(predictedFirst * rateInFirst + predictedSecond * rateInSecond, second.AsT0.Expected.Signals[0].Chance, Precision);
-        Assert.Equal(moveNext, second.AsT0.Expected.MoveId);
+        var rateInFirst = model.Rate(Assert.IsType<Likelihood>(likelihoods.Find(LeansFirst, First).Value), LearningOptions.DefaultRateWeight);
+        var rateInSecond = model.Rate(Assert.IsType<Likelihood>(likelihoods.Find(LeansFirst, Second).Value), LearningOptions.DefaultRateWeight);
+        Assert.Equal(predictedFirst, second.Expected.Odds[0].Odds, Precision);
+        Assert.Equal(predictedFirst * rateInFirst + predictedSecond * rateInSecond, second.Expected.Signals[0].Chance, Precision);
+        Assert.Equal(moveNext, second.Expected.MoveId);
     }
 
     [Fact]
@@ -158,13 +159,13 @@ public sealed class PredictorTests
         var sessions = provider.GetRequiredService<SessionEngine>();
         var histories = provider.GetRequiredService<IHistoryStore>();
         await sessions.StartSession(Learner, Session, CancellationToken.None);
-        var kept = Assert.IsType<TurnExpected>((await histories.Load(Learner, Session, CancellationToken.None)).AsT0[1]);
+        var kept = Assert.IsType<TurnExpected>(Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value)[1]);
 
-        var reported = await sessions.ReportTurn(Learner, Session, [LeansSecond, WentWell], null, null, CancellationToken.None);
+        var reported = Assert.IsType<TurnResult>((await sessions.ReportTurn(Learner, Session, [LeansSecond, WentWell], null, null, CancellationToken.None)).Value);
 
-        Assert.Equal(Predictor.Surprise(kept.Expected, [LeansSecond, WentWell]), reported.AsT0.Surprise, Precision);
-        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
-        Assert.Equal(reported.AsT0.Expected.Signals.AsEnumerable(), Assert.IsType<TurnExpected>(history[^1]).Expected.Signals.AsEnumerable());
+        Assert.Equal(Predictor.Surprise(kept.Expected, [LeansSecond, WentWell]), reported.Surprise, Precision);
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
+        Assert.Equal(reported.Expected.Signals.AsEnumerable(), Assert.IsType<TurnExpected>(history[^1]).Expected.Signals.AsEnumerable());
     }
 
     [Fact]
@@ -181,7 +182,7 @@ public sealed class PredictorTests
         var reported = await sessions.ReportTurn(Learner, Session, [LeansFirst], null, null, CancellationToken.None);
 
         var expected = predictor.Expect(engine.Start(), LearnerModel.Empty, null, null);
-        Assert.Equal(Predictor.Surprise(expected, [LeansFirst]), reported.AsT0.Surprise, Precision);
+        Assert.Equal(Predictor.Surprise(expected, [LeansFirst]), Assert.IsType<TurnResult>(reported.Value).Surprise, Precision);
     }
 
     [Fact]
@@ -194,7 +195,7 @@ public sealed class PredictorTests
 
         TurnResult? last = null;
         foreach (var topic in new[] { "a", "b", "a", "b", "a" })
-            last = (await sessions.ReportTurn(Learner, Session, [LeansFirst], topic, null, CancellationToken.None)).AsT0;
+            last = Assert.IsType<TurnResult>((await sessions.ReportTurn(Learner, Session, [LeansFirst], topic, null, CancellationToken.None)).Value);
 
         var model = await models.Load(Learner, CancellationToken.None);
         Assert.Equal(["a", "b"], model.Topics.AsEnumerable());
@@ -241,18 +242,18 @@ public sealed class PredictorTests
         await sessions.StartSession(Learner, Session, CancellationToken.None);
         var reported = new List<ImmutableArray<StateOdds>>();
         foreach (var signals in new[] { new[] { LeansSecond }, [LeansSecond], [LeansFirst] })
-            reported.Add((await sessions.ReportTurn(Learner, Session, signals, null, null, CancellationToken.None)).AsT0.Belief.All);
+            reported.Add(Assert.IsType<TurnResult>((await sessions.ReportTurn(Learner, Session, signals, null, null, CancellationToken.None)).Value).Belief.All);
 
         // A model moved far since, which would give other odds if the session were worked out again with it.
         await models.Add(Learner, LearnerModelChange.Create([RateCount.Create(LeansFirst, Second, 500, 0)], []), CancellationToken.None);
         var belief = await sessions.GetBelief(Learner, Session, CancellationToken.None);
-        var history = (await histories.Load(Learner, Session, CancellationToken.None)).AsT0;
+        var history = Assert.IsType<ImmutableArray<HistoryEvent>>((await histories.Load(Learner, Session, CancellationToken.None)).Value);
 
-        Assert.Equal(reported[^1].Select(stateOdds => stateOdds.Odds), belief.AsT0.All.Select(stateOdds => stateOdds.Odds));
+        Assert.Equal(reported[^1].Select(stateOdds => stateOdds.Odds), Assert.IsType<SessionBelief>(belief.Value).All.Select(stateOdds => stateOdds.Odds));
         ImmutableArray<int> kept = [.. history.Select((historyEvent, index) => historyEvent is TurnLearned ? index : -1).Where(index => index >= 0)];
         Assert.Equal(3, kept.Length);
         for (var turn = 0; turn < kept.Length; turn++)
-            Assert.Equal(reported[turn].Select(stateOdds => stateOdds.Odds), replayer.Replay(history[..(kept[turn] + 1)]).AsT0.All.Select(stateOdds => stateOdds.Odds));
+            Assert.Equal(reported[turn].Select(stateOdds => stateOdds.Odds), Assert.IsType<Belief>(replayer.Replay(history[..(kept[turn] + 1)]).Value).All.Select(stateOdds => stateOdds.Odds));
     }
 
     [Fact]
@@ -268,8 +269,8 @@ public sealed class PredictorTests
         var twice = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), expected, expected]);
         var once = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), expected, LearnerTurn.Create([]), expected]);
 
-        Assert.Equal(2, twice.AsT2.EventIndex);
-        Assert.True(once.IsT0);
+        Assert.Equal(2, Assert.IsType<BrokenHistory>(twice.Value).EventIndex);
+        Assert.True(once is Belief);
     }
 
     [Fact]
@@ -287,10 +288,10 @@ public sealed class PredictorTests
         var signalMissing = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create(null, odds, chances.RemoveAt(0), []))]);
         var unknownMove = replayer.Replay([SessionStarted.Create(fingerprint, 0.15, 0.15), TurnExpected.Create(Expectation.Create("not_a_move", odds, chances, []))]);
 
-        Assert.True(fits.IsT0);
-        Assert.Equal(1, usualOutOfRange.AsT2.EventIndex);
-        Assert.Equal(1, statesOutOfOrder.AsT2.EventIndex);
-        Assert.Equal(1, signalMissing.AsT2.EventIndex);
-        Assert.Equal(1, unknownMove.AsT2.EventIndex);
+        Assert.True(fits is Belief);
+        Assert.Equal(1, Assert.IsType<BrokenHistory>(usualOutOfRange.Value).EventIndex);
+        Assert.Equal(1, Assert.IsType<BrokenHistory>(statesOutOfOrder.Value).EventIndex);
+        Assert.Equal(1, Assert.IsType<BrokenHistory>(signalMissing.Value).EventIndex);
+        Assert.Equal(1, Assert.IsType<BrokenHistory>(unknownMove.Value).EventIndex);
     }
 }

@@ -2,7 +2,6 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using LearnEngine.Core.Signals;
 using LearnEngine.Core.States;
-using OneOf;
 
 namespace LearnEngine.Core.Likelihoods;
 
@@ -40,7 +39,7 @@ public sealed class LikelihoodTable
     /// Finds the likelihood of the given signal in the given state, or says which of the two ids is unknown.
     /// When both are unknown, the signal is the one reported.
     /// </summary>
-    public OneOf<Likelihood, UnknownSignal, UnknownState> Find(string signalId, string stateId)
+    public Outcome<Likelihood, UnknownSignal, UnknownState> Find(string signalId, string stateId)
     {
         var byState = bySignal.GetValueOrDefault(signalId);
         if (byState is null)

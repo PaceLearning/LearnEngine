@@ -1,6 +1,5 @@
 using System.Text.Json;
 using LearnEngine.Core.Topics;
-using OneOf;
 
 namespace LearnEngine.Core.Learning;
 
@@ -26,7 +25,7 @@ public static class LearnerModelJson
     /// Reads JSON written by <see cref="Write"/>, or says why it is not a learner model. JSON written before effects or
     /// topics were learned has none of them, and reads as none.
     /// </summary>
-    public static OneOf<LearnerModel, UnreadableLearnerModel> Read(string json)
+    public static Outcome<LearnerModel, UnreadableLearnerModel> Read(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
 

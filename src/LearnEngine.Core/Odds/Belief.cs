@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using OneOf;
 
 namespace LearnEngine.Core.Odds;
 
@@ -57,7 +56,7 @@ public sealed class Belief
     /// Gives the leader when it is ahead of the runner up by at least the given margin, or says the leader is not clear.
     /// Only a clear leader lets a move be picked.
     /// </summary>
-    public OneOf<StateOdds, NoClearLeader> ClearLeader(double clearMargin)
+    public Outcome<StateOdds, NoClearLeader> ClearLeader(double clearMargin)
     {
         var clear = Margin >= clearMargin;
         if (!clear)
@@ -72,7 +71,7 @@ public sealed class Belief
     /// </summary>
     public Confidence Confidence(double clearMargin)
     {
-        if (ClearLeader(clearMargin).IsT1)
+        if (ClearLeader(clearMargin) is NoClearLeader)
             return Odds.Confidence.Low;
 
         if (Margin >= HighConfidenceMargin)

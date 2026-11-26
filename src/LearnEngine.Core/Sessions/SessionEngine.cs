@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Effects;
 using LearnEngine.Core.History;
@@ -7,8 +8,8 @@ using LearnEngine.Core.Moves;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Prediction;
 using LearnEngine.Core.Signals;
+using LearnEngine.Core.States;
 using LearnEngine.Core.Topics;
-using OneOf;
 
 namespace LearnEngine.Core.Sessions;
 
@@ -78,13 +79,13 @@ public sealed class SessionEngine
     /// A session that already has a history, even one the store cannot read back, is kept as it is and gives
     /// <see cref="SessionAlreadyStarted"/>.
     /// </summary>
-    public async Task<OneOf<SessionBelief, SessionAlreadyStarted>> StartSession(string learnerId, string sessionId, CancellationToken cancellationToken)
+    public async Task<Outcome<SessionBelief, SessionAlreadyStarted>> StartSession(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
         var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
-        var started = loaded.IsT1 || !loaded.AsT0.IsDefaultOrEmpty;
+        var started = loaded is BrokenHistory or ImmutableArray<HistoryEvent> { IsDefaultOrEmpty: false };
         if (started)
             return SessionAlreadyStarted.Create(learnerId, sessionId);
 
@@ -117,7 +118,7 @@ public sealed class SessionEngine
     /// id gives <see cref="InvalidTopic"/>, and a move made that is not registered gives <see cref="UnknownMove"/>.
     /// Each of these is found before the turn is kept, so nothing is kept.
     /// </summary>
-    public async Task<OneOf<TurnResult, ImmutableArray<UnknownSignal>, SessionNotStarted, OtherVocabulary, BrokenHistory, InvalidTopic, UnknownMove>> ReportTurn(
+    public async Task<Outcome<TurnResult, ImmutableArray<UnknownSignal>, SessionNotStarted, OtherVocabulary, BrokenHistory, InvalidTopic, UnknownMove>> ReportTurn(
         string learnerId,
         string sessionId,
         IEnumerable<string> signalIds,
@@ -132,7 +133,7 @@ public sealed class SessionEngine
         if (topic is not null && !TopicIds.IsValid(topic))
             return InvalidTopic.Create(topic);
 
-        if (moveMade is not null && moves.Find(moveMade).IsT1)
+        if (moveMade is not null && moves.Find(moveMade) is UnknownMove)
             return UnknownMove.Create(moveMade);
 
         ImmutableArray<string> reported = [.. signalIds];
@@ -142,30 +143,34 @@ public sealed class SessionEngine
 
         ImmutableArray<UnknownSignal> unknown = [.. reported
             .Distinct(StringComparer.Ordinal)
-            .Where(signalId => signals.Find(signalId).IsT1)
+            .Where(signalId => signals.Find(signalId) is UnknownSignal)
             .Select(UnknownSignal.Create)];
         if (unknown.Length > 0)
             return unknown;
 
         var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
-        if (loaded.IsT1)
-            return loaded.AsT1;
+        if (loaded is BrokenHistory unreadable)
+            return unreadable;
 
-        var history = loaded.AsT0;
+        if (loaded is not ImmutableArray<HistoryEvent> history)
+            throw new UnreachableException();
+
         if (history.IsDefaultOrEmpty)
             return SessionNotStarted.Create(learnerId, sessionId);
 
         var replayed = replayer.Replay(history);
-        if (replayed.IsT1)
-            return replayed.AsT1;
+        if (replayed is OtherVocabulary other)
+            return other;
 
-        if (replayed.IsT2)
-            return replayed.AsT2;
+        if (replayed is BrokenHistory broken)
+            return broken;
+
+        if (replayed is not Belief previous)
+            throw new UnreachableException();
 
         // The replay checked the history begins with a session start.
         var start = (SessionStarted)history[0];
         var model = await models.Load(learnerId, cancellationToken);
-        var previous = replayed.AsT0;
 
         // The turn is measured against what was kept as expected of it, since the model has moved on since. Only a
         // report that stopped before keeping it leaves none, and then it is expected now, as with no move made.
@@ -175,7 +180,9 @@ public sealed class SessionEngine
         var surprise = Predictor.Surprise(expectedOfTurn, reported);
 
         var predicted = engine.Predict(previous, model, moveMade);
-        var belief = engine.Apply(predicted, model, reported).AsT0;
+        // The signals were checked above, so they all apply.
+        if (engine.Apply(predicted, model, reported) is not Belief belief)
+            throw new UnreachableException();
 
         // The chance the learner was in each state after the turn is added to their counts of every signal in it, as
         // shown when the signal was reported and as not shown when it was not.
@@ -216,17 +223,25 @@ public sealed class SessionEngine
         // The move is chosen and the next turn expected under the model with this turn added.
         var learnt = model.Add(change);
         var leader = belief.ClearLeader(start.ClearMargin);
-        OneOf<PickedMove, NoClearLeader, NoMovesInState> pick = NoClearLeader.Create(belief.Margin);
-        if (leader.IsT0)
+        Outcome<PickedMove, NoClearLeader, NoMovesInState> pick = NoClearLeader.Create(belief.Margin);
+        if (leader is StateOdds clear)
         {
             // The clear leader is always a registered state, so the chooser never answers with an unknown one.
-            var chosen = chooser.Choose(belief, learnt, leader.AsT0.StateId);
-            pick = chosen.IsT0 ? chosen.AsT0 : chosen.AsT1;
-            if (chosen.IsT0)
-                await histories.Append(learnerId, sessionId, MovePicked.Create(leader.AsT0.StateId, chosen.AsT0.Move.Id, chosen.AsT0.GoalChance, chosen.AsT0.Why), cancellationToken);
+            var chosen = chooser.Choose(belief, learnt, clear.StateId);
+            if (chosen is UnknownState)
+                throw new UnreachableException();
+
+            if (chosen is NoMovesInState noMoves)
+                pick = noMoves;
+
+            if (chosen is PickedMove picked)
+            {
+                pick = picked;
+                await histories.Append(learnerId, sessionId, MovePicked.Create(clear.StateId, picked.Move.Id, picked.GoalChance, picked.Why), cancellationToken);
+            }
         }
 
-        var moveNext = pick.IsT0 ? pick.AsT0.Move.Id : null;
+        var moveNext = pick is PickedMove next ? next.Move.Id : null;
         var expected = predictor.Expect(belief, learnt, moveNext, topic ?? lastTopic);
         await histories.Append(learnerId, sessionId, TurnExpected.Create(expected), cancellationToken);
         return TurnResult.Create(SessionBelief.Create(belief, start.ClearMargin), pick, expected, surprise);
@@ -237,28 +252,33 @@ public sealed class SessionEngine
     /// A session with no history gives <see cref="SessionNotStarted"/>. A history stamped with another vocabulary gives
     /// <see cref="OtherVocabulary"/>, and a history that cannot be read back or replayed gives <see cref="BrokenHistory"/>.
     /// </summary>
-    public async Task<OneOf<SessionBelief, SessionNotStarted, OtherVocabulary, BrokenHistory>> GetBelief(string learnerId, string sessionId, CancellationToken cancellationToken)
+    public async Task<Outcome<SessionBelief, SessionNotStarted, OtherVocabulary, BrokenHistory>> GetBelief(string learnerId, string sessionId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(learnerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
         var loaded = await histories.Load(learnerId, sessionId, cancellationToken);
-        if (loaded.IsT1)
-            return loaded.AsT1;
+        if (loaded is BrokenHistory unreadable)
+            return unreadable;
 
-        var history = loaded.AsT0;
+        if (loaded is not ImmutableArray<HistoryEvent> history)
+            throw new UnreachableException();
+
         if (history.IsDefaultOrEmpty)
             return SessionNotStarted.Create(learnerId, sessionId);
 
         var replayed = replayer.Replay(history);
-        if (replayed.IsT1)
-            return replayed.AsT1;
+        if (replayed is OtherVocabulary other)
+            return other;
 
-        if (replayed.IsT2)
-            return replayed.AsT2;
+        if (replayed is BrokenHistory broken)
+            return broken;
+
+        if (replayed is not Belief belief)
+            throw new UnreachableException();
 
         // The replay checked the history begins with a session start.
         var start = (SessionStarted)history[0];
-        return SessionBelief.Create(replayed.AsT0, start.ClearMargin);
+        return SessionBelief.Create(belief, start.ClearMargin);
     }
 }

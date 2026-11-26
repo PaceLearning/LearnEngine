@@ -1,7 +1,6 @@
 using LearnEngine.Core.Choosing;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Prediction;
-using OneOf;
 
 namespace LearnEngine.Core.Sessions;
 
@@ -21,7 +20,7 @@ public sealed class TurnResult
     /// clear, or the app allowed no moves in the clear state. With no pick the tutor keeps going and still answers
     /// anything the learner asks for outright.
     /// </summary>
-    public OneOf<PickedMove, NoClearLeader, NoMovesInState> Pick { get; }
+    public Outcome<PickedMove, NoClearLeader, NoMovesInState> Pick { get; }
 
     /// <summary>
     /// What the engine expects of the next turn, assuming the picked move is made, or no move when none was picked:
@@ -35,7 +34,7 @@ public sealed class TurnResult
     /// </summary>
     public double Surprise { get; }
 
-    private TurnResult(SessionBelief belief, OneOf<PickedMove, NoClearLeader, NoMovesInState> pick, Expectation expected, double surprise)
+    private TurnResult(SessionBelief belief, Outcome<PickedMove, NoClearLeader, NoMovesInState> pick, Expectation expected, double surprise)
     {
         Belief = belief;
         Pick = pick;
@@ -45,6 +44,6 @@ public sealed class TurnResult
 
     // Internal so a turn result only comes from the engine, which has kept the turn, the pick and what it expects next
     // in the history.
-    internal static TurnResult Create(SessionBelief belief, OneOf<PickedMove, NoClearLeader, NoMovesInState> pick, Expectation expected, double surprise) =>
+    internal static TurnResult Create(SessionBelief belief, Outcome<PickedMove, NoClearLeader, NoMovesInState> pick, Expectation expected, double surprise) =>
         new(belief, pick, expected, surprise);
 }

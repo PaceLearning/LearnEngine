@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LearnEngine.Core.Learning;
 
 namespace LearnEngine.Mcp.Storage;
@@ -32,10 +33,13 @@ public sealed class FileLearnerModelStore : ILearnerModelStore
 
         var json = await File.ReadAllTextAsync(path, cancellationToken);
         var read = LearnerModelJson.Read(json);
-        if (read.IsT1)
-            throw new InvalidDataException($"{path} is not a learner model: {read.AsT1.Reason}");
+        if (read is UnreadableLearnerModel unreadable)
+            throw new InvalidDataException($"{path} is not a learner model: {unreadable.Reason}");
 
-        return read.AsT0;
+        if (read is not LearnerModel model)
+            throw new UnreachableException();
+
+        return model;
     }
 
     /// <inheritdoc/>

@@ -18,7 +18,7 @@ public sealed class LearnerModelJsonTests
         var json = LearnerModelJson.Write(model);
         var read = LearnerModelJson.Read(json);
 
-        var readBack = read.AsT0;
+        var readBack = Assert.IsType<LearnerModel>(read.Value);
         Assert.Equal(model.Rates.AsEnumerable(), readBack.Rates.AsEnumerable());
         Assert.Equal(model.Effects.AsEnumerable(), readBack.Effects.AsEnumerable());
         Assert.Equal(model.TopicLinks.AsEnumerable(), readBack.TopicLinks.AsEnumerable());
@@ -33,7 +33,7 @@ public sealed class LearnerModelJsonTests
         var json = LearnerModelJson.Write(LearnerModel.Empty);
 
         Assert.Equal("""{"rates":[],"effects":[],"topic_links":[],"topic_states":[]}""", json);
-        Assert.Empty(LearnerModelJson.Read(json).AsT0.Rates);
+        Assert.Empty(Assert.IsType<LearnerModel>(LearnerModelJson.Read(json).Value).Rates);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class LearnerModelJsonTests
     {
         var read = LearnerModelJson.Read("""{"rates":[{"signal_id":"says.dont_get_it","state_id":"stuck","shown":1,"not_shown":2}]}""");
 
-        var model = read.AsT0;
+        var model = Assert.IsType<LearnerModel>(read.Value);
         Assert.Equal([RateCount.Create("says.dont_get_it", "stuck", 1, 2)], model.Rates.AsEnumerable());
         Assert.Empty(model.Effects);
         Assert.Empty(model.TopicLinks);
@@ -63,7 +63,7 @@ public sealed class LearnerModelJsonTests
     {
         var read = LearnerModelJson.Read(json);
 
-        Assert.True(read.IsT1);
-        Assert.Equal(json, read.AsT1.Json);
+        var unreadable = Assert.IsType<UnreadableLearnerModel>(read.Value);
+        Assert.Equal(json, unreadable.Json);
     }
 }

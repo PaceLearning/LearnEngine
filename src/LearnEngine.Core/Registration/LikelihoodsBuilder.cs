@@ -47,7 +47,7 @@ public sealed class LikelihoodsBuilder
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(stateId);
 
-            var knownState = states.Find(stateId).IsT0;
+            var knownState = states.Find(stateId) is State;
             if (!knownState)
                 throw new InvalidOperationException($"The state \"{stateId}\" in the rates of the signal \"{signalId}\" is not added. Add it with AddStates before the likelihoods.");
 

@@ -1,9 +1,11 @@
+using System.Collections.Immutable;
 using LearnEngine.Core.Choosing;
 using LearnEngine.Core.History;
 using LearnEngine.Core.Learning;
 using LearnEngine.Core.Odds;
 using LearnEngine.Core.Registration;
 using LearnEngine.Core.Sessions;
+using LearnEngine.Core.States;
 using LearnEngine.Teaching;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -28,9 +30,10 @@ public sealed class MoveChooserTests
 
         // From second, two has no effect of its own and fades: it stays in first only by the fade times its prior.
         var fromSecond = OddsOptions.DefaultFade * FirstPrior;
-        Assert.Equal(Two, chosen.AsT0.Move.Id);
-        Assert.Equal(FirstPrior * 1 + SecondPrior * fromSecond, chosen.AsT0.GoalChance, 10);
-        Assert.Equal("This learner has not had two in first yet, so the shared guess is that it leads to first 100% of the time.", chosen.AsT0.Why);
+        var picked = Assert.IsType<PickedMove>(chosen.Value);
+        Assert.Equal(Two, picked.Move.Id);
+        Assert.Equal(FirstPrior * 1 + SecondPrior * fromSecond, picked.GoalChance, 10);
+        Assert.Equal("This learner has not had two in first yet, so the shared guess is that it leads to first 100% of the time.", picked.Why);
     }
 
     [Fact]
@@ -43,8 +46,9 @@ public sealed class MoveChooserTests
         var chosen = chooser.Choose(engine.Start(), LearnerModel.Empty, First);
         var again = chooser.Choose(engine.Start(), LearnerModel.Empty, First);
 
-        Assert.Equal(One, chosen.AsT0.Move.Id);
-        Assert.Equal(chosen.AsT0, again.AsT0);
+        var picked = Assert.IsType<PickedMove>(chosen.Value);
+        Assert.Equal(One, picked.Move.Id);
+        Assert.Equal(picked, Assert.IsType<PickedMove>(again.Value));
     }
 
     [Fact]
@@ -60,8 +64,9 @@ public sealed class MoveChooserTests
 
         var chosen = chooser.Choose(engine.Start(), model, First);
 
-        Assert.Equal(Two, chosen.AsT0.Move.Id);
-        Assert.Equal("For this learner, two led from first to first 6 of 8 times.", chosen.AsT0.Why);
+        var picked = Assert.IsType<PickedMove>(chosen.Value);
+        Assert.Equal(Two, picked.Move.Id);
+        Assert.Equal("For this learner, two led from first to first 6 of 8 times.", picked.Why);
     }
 
     [Fact]
@@ -74,8 +79,8 @@ public sealed class MoveChooserTests
             EffectCount.Create(First, Two, First, 6),
             EffectCount.Create(First, Two, Second, 2)]);
 
-        var weighed = chooser.Weigh(engine.Start(), model, First).AsT0;
-        var chosen = chooser.Choose(engine.Start(), model, First).AsT0;
+        var weighed = Assert.IsType<ImmutableArray<WeighedMove>>(chooser.Weigh(engine.Start(), model, First).Value);
+        var chosen = Assert.IsType<PickedMove>(chooser.Choose(engine.Start(), model, First).Value);
 
         Assert.Equal([One, Two], weighed.Select(move => move.MoveId));
         Assert.Equal([0, 8], weighed.Select(move => move.OwnSteps));
@@ -97,7 +102,7 @@ public sealed class MoveChooserTests
 
         var weighed = chooser.Weigh(engine.Start(), LearnerModel.Empty, Second);
 
-        Assert.Equal(Second, weighed.AsT1.StateId);
+        Assert.Equal(Second, Assert.IsType<NoMovesInState>(weighed.Value).StateId);
     }
 
     [Fact]
@@ -116,8 +121,9 @@ public sealed class MoveChooserTests
         var chosen = chooser.Choose(engine.Start(), model, First);
 
         var total = 110 + 10;
-        Assert.Equal(Two, chosen.AsT0.Move.Id);
-        Assert.Equal(chosen.AsT0.GoalChance + Math.Sqrt(2 * Math.Log(total) / 10), chosen.AsT0.Bound, 10);
+        var picked = Assert.IsType<PickedMove>(chosen.Value);
+        Assert.Equal(Two, picked.Move.Id);
+        Assert.Equal(picked.GoalChance + Math.Sqrt(2 * Math.Log(total) / 10), picked.Bound, 10);
     }
 
     [Fact]
@@ -130,8 +136,8 @@ public sealed class MoveChooserTests
         var noMoves = chooser.Choose(engine.Start(), LearnerModel.Empty, Second);
         var unknown = chooser.Choose(engine.Start(), LearnerModel.Empty, "not_a_state");
 
-        Assert.Equal(NoMovesInState.Create(Second), noMoves.AsT1);
-        Assert.Equal("not_a_state", unknown.AsT2.Id);
+        Assert.Equal(NoMovesInState.Create(Second), Assert.IsType<NoMovesInState>(noMoves.Value));
+        Assert.Equal("not_a_state", Assert.IsType<UnknownState>(unknown.Value).Id);
     }
 
     [Fact]
@@ -143,8 +149,8 @@ public sealed class MoveChooserTests
         var firstPicks = await Simulate(first, 30);
         var secondPicks = await Simulate(second, 30);
 
-        var firstHistory = (await first.GetRequiredService<IHistoryStore>().Load(Learner, Session, CancellationToken.None)).AsT0;
-        var secondHistory = (await second.GetRequiredService<IHistoryStore>().Load(Learner, Session, CancellationToken.None)).AsT0;
+        var firstHistory = Assert.IsType<ImmutableArray<HistoryEvent>>((await first.GetRequiredService<IHistoryStore>().Load(Learner, Session, CancellationToken.None)).Value);
+        var secondHistory = Assert.IsType<ImmutableArray<HistoryEvent>>((await second.GetRequiredService<IHistoryStore>().Load(Learner, Session, CancellationToken.None)).Value);
         Assert.Equal(firstPicks, secondPicks);
         Assert.Contains(firstHistory, historyEvent => historyEvent is MovePicked);
         Assert.Equal(firstHistory.Select(HistoryEventJson.Write), secondHistory.Select(HistoryEventJson.Write));
@@ -178,7 +184,7 @@ public sealed class MoveChooserTests
                 ? ["answers.correctly", "says.it_clicked"]
                 : ["says.dont_get_it", "asks.for_help"];
             var reported = await sessions.ReportTurn(Learner, Session, signals, "recursion.base_case", moveMade, CancellationToken.None);
-            moveMade = reported.AsT0.Pick.IsT0 ? reported.AsT0.Pick.AsT0.Move.Id : null;
+            moveMade = Assert.IsType<TurnResult>(reported.Value).Pick is PickedMove picked ? picked.Move.Id : null;
             picks.Add(moveMade);
         }
 
